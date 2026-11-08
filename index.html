@@ -1,0 +1,917 @@
+<title>Renforts</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Chakra+Petch:wght@500;700&display=swap" rel="stylesheet">
+<style>
+/* Layout : scène 3D plein écran, HUD en bandeau en haut, panneau de mission ancré en bas (zone du pouce) */
+:root {
+  --sky: #a9cbe0;
+  --ink: #1d2416;
+  --paper: #f3ecd9;
+  --ally: #2f6fe0;
+  --enemy: #d8432f;
+  --brass: #f2b632;
+  --olive: #55693a;
+  --font-display: "Black Ops One", Impact, "Arial Black", system-ui, sans-serif;
+  --font-ui: "Chakra Petch", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color-scheme: light;
+}
+[hidden] { display: none !important; }
+html { height: 100%; overflow: hidden; }
+body {
+  height: 100%; margin: 0; overflow: hidden;
+  background: var(--sky); color: var(--ink);
+  font-family: var(--font-ui);
+  -webkit-user-select: none; user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+#game { position: fixed; inset: 0; touch-action: none; }
+#game canvas { display: block; width: 100%; height: 100%; }
+
+.hud {
+  position: fixed; left: 0; right: 0; top: 0; z-index: 5;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 12px);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; align-items: center; gap: 10px;
+  pointer-events: none;
+}
+.chip {
+  background: rgba(29, 36, 22, .8); color: var(--paper);
+  border-radius: 10px; padding: 6px 10px;
+  font-weight: 700; font-size: 13px; letter-spacing: .08em; text-transform: uppercase;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+  display: flex; align-items: center; gap: 6px;
+}
+.chip b { color: var(--brass); font-weight: 700; }
+.progress {
+  flex: 1; min-width: 0; height: 12px; border-radius: 7px; overflow: hidden;
+  background: rgba(29, 36, 22, .3); border: 2px solid rgba(29, 36, 22, .7);
+}
+.progress i { display: block; height: 100%; width: 0; background: var(--brass); }
+.icon-btn {
+  pointer-events: auto; cursor: pointer;
+  border: 0; border-radius: 10px; padding: 6px 10px;
+  background: rgba(29, 36, 22, .8); color: var(--paper);
+  font: 700 13px var(--font-ui); letter-spacing: .08em; text-transform: uppercase;
+  touch-action: manipulation;
+}
+.icon-btn:focus-visible, .btn:focus-visible { outline: 3px solid var(--brass); outline-offset: 2px; }
+
+.labels { position: fixed; inset: 0; pointer-events: none; z-index: 4; overflow: hidden; }
+.tag {
+  position: absolute; left: 0; top: 0; will-change: transform;
+  font-family: var(--font-display); font-size: 22px; line-height: 1;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.tag span {
+  display: block; color: #fff; padding: 6px 10px 5px; border-radius: 8px;
+  border: 2px solid rgba(29, 36, 22, .55);
+}
+.tag.ally span { background: var(--ally); }
+.tag.enemy span { background: var(--enemy); }
+
+.overlay {
+  position: fixed; inset: 0; z-index: 10;
+  display: flex; flex-direction: column; justify-content: space-between; align-items: center;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 56px);
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  pointer-events: none;
+}
+.logo {
+  font-family: var(--font-display); color: var(--paper);
+  font-size: clamp(48px, 15vw, 88px); line-height: .9; letter-spacing: .02em;
+  text-shadow: 0 4px 0 var(--ink), 0 0 2px var(--ink);
+  -webkit-text-stroke: 2px var(--ink);
+  text-align: center;
+}
+.logo small {
+  display: block; margin-top: 10px;
+  font: 700 13px var(--font-ui); letter-spacing: .22em; text-transform: uppercase;
+  -webkit-text-stroke: 0; text-shadow: none;
+  color: var(--ink); background: var(--brass); padding: 4px 10px; border-radius: 4px;
+  width: fit-content; margin-left: auto; margin-right: auto;
+}
+.panel {
+  pointer-events: auto; width: 100%; max-width: 420px; box-sizing: border-box;
+  background: var(--paper); color: var(--ink);
+  border: 3px solid var(--ink); border-radius: 16px; box-shadow: 0 6px 0 var(--ink);
+  padding: 18px; display: flex; flex-direction: column; gap: 12px; text-align: center;
+}
+.panel h2 {
+  margin: 0; font-family: var(--font-display); font-weight: 400;
+  font-size: 30px; line-height: 1.05; text-wrap: balance;
+}
+.eyebrow { font-weight: 700; font-size: 12px; letter-spacing: .2em; text-transform: uppercase; color: var(--olive); }
+.panel p { margin: 0; font-size: 15px; line-height: 1.4; }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.stat {
+  border: 2px solid rgba(29, 36, 22, .25); border-radius: 10px; padding: 8px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.stat span { font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--olive); }
+.stat strong { font-family: var(--font-display); font-weight: 400; font-size: 24px; font-variant-numeric: tabular-nums; }
+.btn {
+  cursor: pointer; touch-action: manipulation;
+  border: 3px solid var(--ink); border-radius: 12px; padding: 14px 16px;
+  background: var(--brass); color: var(--ink);
+  font-family: var(--font-display); font-size: 22px; letter-spacing: .03em;
+  box-shadow: 0 4px 0 var(--ink); transition: transform .08s, box-shadow .08s;
+}
+.btn:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--ink); }
+.btn.secondary {
+  background: transparent; font-family: var(--font-ui); font-weight: 700; font-size: 15px;
+  padding: 10px 14px; box-shadow: none; border-width: 2px;
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+}
+.btn.secondary:active { transform: translateY(1px); }
+.btn[disabled] { opacity: .45; cursor: not-allowed; }
+.hint { font-size: 13px; color: var(--olive); font-weight: 700; }
+.result-win h2 { color: var(--ally); }
+.result-lose h2 { color: var(--enemy); }
+@media (prefers-reduced-motion: reduce) { .btn { transition: none; } }
+</style>
+
+<div id="game" aria-label="Jeu Renforts"></div>
+<div class="labels" id="labels"></div>
+
+<div class="hud" id="hud" hidden>
+  <div class="chip">Op. <b id="hudLevel">1</b></div>
+  <div class="progress" aria-hidden="true"><i id="hudProgress"></i></div>
+  <div class="chip">★ <b id="hudMedals">0</b></div>
+  <button class="icon-btn" id="muteBtn" type="button">Son</button>
+</div>
+
+<div class="overlay" id="menu">
+  <div class="logo">RENFORTS<small>Grossis ton armée</small></div>
+  <div class="panel">
+    <div class="eyebrow" id="menuOp">Opération 1</div>
+    <h2>Traverse les portes, écrase l'armée rouge</h2>
+    <p>Glisse à gauche ou à droite pour choisir tes portes. Évite les barricades.</p>
+    <button class="btn" id="playBtn" type="button">Lancer l'opération</button>
+    <button class="btn secondary" id="recruitBtn" type="button">
+      <span id="recruitLabel">Recruter : 1 soldat au départ</span><span id="recruitCost">★ 30</span>
+    </button>
+    <div class="hint">★ <span id="menuMedals">0</span> médailles</div>
+  </div>
+</div>
+
+<div class="overlay" id="end" hidden>
+  <div></div>
+  <div class="panel" id="endPanel">
+    <div class="eyebrow" id="endOp">Opération 1</div>
+    <h2 id="endTitle">Mission accomplie</h2>
+    <div class="stats">
+      <div class="stat"><span id="endStatLabel">Survivants</span><strong id="endSurvivors">0</strong></div>
+      <div class="stat"><span>Médailles</span><strong id="endMedals">+0</strong></div>
+    </div>
+    <button class="btn" id="endBtn" type="button">Opération suivante</button>
+    <button class="btn secondary" id="menuBtn" type="button"><span>Retour au camp</span><span>⟵</span></button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  // ---------- Réglages ----------
+  const GA = Math.PI * (3 - Math.sqrt(5));
+  const HALF = 6;            // demi-largeur de la route
+  const UNIT_CLAMP = 5.6;    // un soldat ne sort jamais de la route
+  const CX_CLAMP = 4.4;      // centre de l'armée
+  const SPEED = 15;
+  const SPACING = 0.52;
+  const MAX_X = 4.6;         // largeur max de la formation avant qu'elle s'allonge
+  const CAP_ALLY = 260, CAP_SQUAD = 140, CAP_FINAL = 240, CAP_ENEMY_TOTAL = 900;
+  const COL = {
+    ally: 0x2f6fe0, allyLegs: 0x23407a, enemy: 0xd8432f, enemyLegs: 0x6e2219,
+    skin: 0xf0c9a0, helmA: 0x4f6233, helmE: 0x2b2b2b, gun: 0x1e1e1e,
+    road: 0xb59f74, ground: 0x86a453, sky: 0xa9cbe0, rail: 0x8a7b5c, stone: 0xb9ab8c
+  };
+
+  // ---------- Sauvegarde ----------
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem('renforts.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem('renforts.' + k, JSON.stringify(v)); } catch (e) {} }
+  };
+  let save = { level: 1, medals: 0, recruit: 0 };
+  let muted = false;
+
+  // ---------- Éléments ----------
+  const $ = (id) => document.getElementById(id);
+  const container = $('game'), labelsEl = $('labels');
+
+  // ---------- Three.js ----------
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  container.appendChild(renderer.domElement);
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(COL.sky);
+  scene.fog = new THREE.Fog(COL.sky, 55, 165);
+  const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 400);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x5f7340, 0.8));
+  const sun = new THREE.DirectionalLight(0xfff4e0, 0.7);
+  sun.position.set(-8, 20, 10);
+  scene.add(sun);
+
+  function resize() {
+    const w = container.clientWidth || window.innerWidth, h = container.clientHeight || window.innerHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    // téléphone en portrait : on recule un peu la caméra
+    camera.fov = w / h < 0.8 ? 68 : 55;
+    camera.updateProjectionMatrix();
+  }
+  window.addEventListener('resize', resize);
+
+  // Fusionne plusieurs formes simples en une seule géométrie colorée
+  function mergeParts(parts) {
+    const pos = [], nor = [], col = [];
+    for (const p of parts) {
+      const g = p.geo.index ? p.geo.toNonIndexed() : p.geo;
+      const c = new THREE.Color(p.color);
+      const pa = g.attributes.position.array, na = g.attributes.normal.array;
+      for (let i = 0; i < pa.length; i += 3) {
+        pos.push(pa[i], pa[i + 1], pa[i + 2]);
+        nor.push(na[i], na[i + 1], na[i + 2]);
+        col.push(c.r, c.g, c.b);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    return g;
+  }
+  function makeSoldier(body, legs, helm) {
+    const g = mergeParts([
+      { geo: new THREE.BoxGeometry(0.26, 0.28, 0.16).translate(0, 0.14, 0), color: legs },
+      { geo: new THREE.BoxGeometry(0.34, 0.34, 0.22).translate(0, 0.45, 0), color: body },
+      { geo: new THREE.SphereGeometry(0.13, 8, 6).translate(0, 0.73, 0), color: COL.skin },
+      { geo: new THREE.SphereGeometry(0.16, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, 0.76, 0), color: helm },
+      { geo: new THREE.BoxGeometry(0.05, 0.05, 0.44).translate(0.21, 0.47, -0.12), color: COL.gun }
+    ]);
+    g.scale(1.25, 1.25, 1.25);
+    return g;
+  }
+  const vcMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  const allyMesh = new THREE.InstancedMesh(makeSoldier(COL.ally, COL.allyLegs, COL.helmA), vcMat, CAP_ALLY);
+  const enemyMesh = new THREE.InstancedMesh(makeSoldier(COL.enemy, COL.enemyLegs, COL.helmE), vcMat, CAP_ENEMY_TOTAL);
+  for (const m of [allyMesh, enemyMesh]) {
+    m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    m.frustumCulled = false;
+    m.count = 0;
+    scene.add(m);
+  }
+
+  // Particules (éclats quand un soldat tombe)
+  const PART_MAX = 260;
+  const partMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.14, 0.14, 0.14), new THREE.MeshLambertMaterial(), PART_MAX);
+  partMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  partMesh.frustumCulled = false;
+  const tmpColor = new THREE.Color();
+  for (let i = 0; i < PART_MAX; i++) partMesh.setColorAt(i, tmpColor.set(0xffffff));
+  partMesh.count = 0;
+  scene.add(partMesh);
+  const parts = [];
+  let partCursor = 0;
+  function burst(x, z, color, n) {
+    for (let k = 0; k < (n || 3); k++) {
+      const p = { x, y: 0.6, z, vx: (Math.random() - 0.5) * 5, vy: 3 + Math.random() * 3, vz: (Math.random() - 0.5) * 5, life: 0.7, color };
+      if (parts.length < PART_MAX) parts.push(p); else { parts[partCursor] = p; partCursor = (partCursor + 1) % PART_MAX; }
+    }
+  }
+
+  // ---------- Formation en tournesol ----------
+  const BX = [], BZ = [];
+  for (let i = 0; i < 400; i++) {
+    const r = SPACING * Math.sqrt(i + 0.5);
+    BX.push(r * Math.cos(i * GA));
+    BZ.push(r * Math.sin(i * GA));
+  }
+  function radiusOf(n) { return SPACING * Math.sqrt(Math.max(1, n)); }
+  function xScale(n) { const r = radiusOf(n); return r > MAX_X ? MAX_X / r : 1; }
+
+  // ---------- Textures ----------
+  function opLabel(o) { return ({ '+': '+', '-': '−', 'x': '×', '/': '÷' })[o.op] + o.v; }
+  function isGood(o) { return o.op === '+' || o.op === 'x'; }
+  function gateTexture(label, good) {
+    const c = document.createElement('canvas'); c.width = 512; c.height = 256;
+    const x = c.getContext('2d');
+    x.fillStyle = good ? 'rgba(61,139,255,0.6)' : 'rgba(240,70,55,0.6)';
+    x.fillRect(0, 0, 512, 256);
+    x.lineWidth = 14;
+    x.strokeStyle = good ? 'rgba(210,230,255,0.95)' : 'rgba(255,215,205,0.95)';
+    x.strokeRect(7, 7, 498, 242);
+    x.font = '150px "Black Ops One", Impact, "Arial Black", sans-serif';
+    x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.lineWidth = 14; x.strokeStyle = 'rgba(20,24,16,0.55)';
+    x.strokeText(label, 256, 140);
+    x.fillStyle = '#ffffff';
+    x.fillText(label, 256, 140);
+    const t = new THREE.CanvasTexture(c);
+    t.anisotropy = 4;
+    return t;
+  }
+  function stripeTexture() {
+    const c = document.createElement('canvas'); c.width = 128; c.height = 64;
+    const x = c.getContext('2d');
+    x.fillStyle = '#f3ecd9'; x.fillRect(0, 0, 128, 64);
+    x.fillStyle = '#d8432f';
+    for (let i = -2; i < 6; i++) {
+      x.beginPath();
+      x.moveTo(i * 32, 64); x.lineTo(i * 32 + 16, 64); x.lineTo(i * 32 + 48, 0); x.lineTo(i * 32 + 32, 0);
+      x.closePath(); x.fill();
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.wrapS = THREE.RepeatWrapping;
+    return t;
+  }
+
+  // ---------- Génération d'une opération ----------
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      let t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  function applyOp(c, o) {
+    switch (o.op) {
+      case '+': return c + o.v;
+      case '-': return Math.max(0, c - o.v);
+      case 'x': return c * o.v;
+      case '/': return Math.floor(c / o.v);
+    }
+    return c;
+  }
+  function genLevel(lv, startCount) {
+    const rnd = mulberry32(lv * 7919 + 17);
+    const ri = (a, b) => a + Math.floor(rnd() * (b - a + 1));
+    const rows = [];
+    let E = startCount, d = 38, prev = '';
+    const n = 7 + Math.min(lv, 9);
+    const good = () => {
+      if (E < 200 && rnd() < 0.35) return { op: 'x', v: (E < 40 && rnd() < 0.25) ? 3 : 2 };
+      return { op: '+', v: ri(5, 12) + lv * 2 + Math.round(E * 0.15) };
+    };
+    const bad = () => {
+      const r = rnd();
+      if (r < 0.45) return { op: '-', v: Math.max(2, Math.round(E * (0.3 + rnd() * 0.3))) };
+      if (r < 0.75 && E > 6) return { op: '/', v: 2 };
+      return { op: '+', v: ri(1, 4) };
+    };
+    for (let i = 0; i < n; i++) {
+      let t = 'gate';
+      const r = rnd();
+      if (i >= 2 && prev !== 'enemy' && r < 0.3) t = 'enemy';
+      else if (lv >= 2 && i >= 1 && prev !== 'obstacle' && r > 0.76) t = 'obstacle';
+      if (t === 'gate') {
+        const a = good(), b = rnd() < 0.25 ? good() : bad();
+        const opts = rnd() < 0.5 ? [a, b] : [b, a];
+        rows.push({ type: 'gate', d, opts });
+        const ea = applyOp(E, opts[0]), eb = applyOp(E, opts[1]);
+        E = Math.max(1, Math.round(Math.max(ea, eb) * 0.85 + Math.min(ea, eb) * 0.15));
+      } else if (t === 'enemy') {
+        const c = Math.max(3, Math.round(E * (0.28 + rnd() * 0.22)));
+        rows.push({ type: 'enemy', d: d + 4, count: c, x: (rnd() - 0.5) * 4 });
+        E = Math.max(1, E - c);
+      } else {
+        const w = 3.6 + rnd() * 1.2;
+        const pos = ri(0, 2);
+        rows.push({ type: 'obstacle', d, w, c0: [-HALF + w / 2, 0, HALF - w / 2][pos], move: lv >= 4 && rnd() < 0.5, phase: rnd() * 6.28 });
+        E = Math.max(1, Math.round(E * 0.85));
+      }
+      prev = t;
+      d += 40 + rnd() * 12;
+    }
+    const finalCount = Math.max(8, Math.round(E * Math.min(0.5 + lv * 0.04, 0.82)));
+    return { rows, finalD: d + 8, finalCount };
+  }
+
+  // ---------- État du jeu ----------
+  let levelGroup = null;
+  let gates = [], obstacles = [], squads = [];
+  let finalD = 300, fortressFlag = null;
+  const ally = { count: 1, cx: 0, d: 0, units: [] };
+  let state = 'menu';      // menu | run | battle | victory | defeat | done
+  let battle = null, battleAcc = 0, stateTimer = 0;
+  let time = 0;
+  let allyTag = null;
+
+  function makeTag(kind) {
+    const el = document.createElement('div');
+    el.className = 'tag ' + kind;
+    el.hidden = true;
+    const s = document.createElement('span');
+    el.appendChild(s);
+    labelsEl.appendChild(el);
+    return el;
+  }
+  function setTag(el, n) { const s = el.firstChild; const t = String(n); if (s.textContent !== t) s.textContent = t; }
+  function bump(el) { try { el.firstChild.animate([{ transform: 'scale(1.35)' }, { transform: 'scale(1)' }], { duration: 260, easing: 'ease-out' }); } catch (e) {} }
+
+  function disposeGroup(g) {
+    g.traverse((o) => {
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) {
+        const ms = Array.isArray(o.material) ? o.material : [o.material];
+        ms.forEach((m) => { if (m.map) m.map.dispose(); m.dispose(); });
+      }
+    });
+  }
+
+  function buildLevel() {
+    if (levelGroup) { scene.remove(levelGroup); disposeGroup(levelGroup); }
+    labelsEl.innerHTML = '';
+    levelGroup = new THREE.Group();
+    scene.add(levelGroup);
+
+    const startCount = 1 + save.recruit;
+    const L = genLevel(save.level, startCount);
+    finalD = L.finalD;
+    const roadLen = finalD + 90;
+    const roadMid = -(finalD + 60) / 2 + 15;
+
+    // Sol, route, rails
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, roadLen + 300), new THREE.MeshLambertMaterial({ color: COL.ground }));
+    ground.rotation.x = -Math.PI / 2; ground.position.set(0, -0.01, roadMid);
+    levelGroup.add(ground);
+    const road = new THREE.Mesh(new THREE.BoxGeometry(HALF * 2, 0.3, roadLen), new THREE.MeshLambertMaterial({ color: COL.road }));
+    road.position.set(0, -0.15, roadMid);
+    levelGroup.add(road);
+    for (const s of [-1, 1]) {
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.5, roadLen), new THREE.MeshLambertMaterial({ color: COL.rail }));
+      rail.position.set(s * (HALF + 0.17), 0.1, roadMid);
+      levelGroup.add(rail);
+    }
+    // Marquage central
+    const nDash = Math.floor(roadLen / 6);
+    const dashes = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.22, 2.2), new THREE.MeshBasicMaterial({ color: 0xe9dcb8 }), nDash);
+    const m4 = new THREE.Matrix4(), rotX = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
+    for (let i = 0; i < nDash; i++) { m4.copy(rotX).setPosition(0, 0.012, 20 - i * 6); dashes.setMatrixAt(i, m4); }
+    levelGroup.add(dashes);
+
+    // Arbres
+    const treeGeo = mergeParts([
+      { geo: new THREE.CylinderGeometry(0.18, 0.25, 1.2, 6).translate(0, 0.6, 0), color: 0x6b4f33 },
+      { geo: new THREE.ConeGeometry(1.2, 2.6, 7).translate(0, 2.3, 0), color: 0x3f6b35 },
+      { geo: new THREE.ConeGeometry(0.9, 1.9, 7).translate(0, 3.3, 0), color: 0x4c7d3d }
+    ]);
+    const rnd = mulberry32(save.level * 31 + 5);
+    const nTrees = Math.floor(roadLen / 4);
+    const trees = new THREE.InstancedMesh(treeGeo, new THREE.MeshLambertMaterial({ vertexColors: true }), nTrees);
+    for (let i = 0; i < nTrees; i++) {
+      const side = i % 2 ? 1 : -1;
+      const x = side * (9 + Math.pow(rnd(), 1.6) * 40);
+      const z = 30 - rnd() * (roadLen + 40);
+      const s = 0.7 + rnd() * 0.8;
+      m4.makeRotationY(rnd() * 6.28).scale(new THREE.Vector3(s, s, s)).setPosition(x, 0, z);
+      trees.setMatrixAt(i, m4);
+    }
+    levelGroup.add(trees);
+
+    // Lignes de jeu
+    gates = []; obstacles = []; squads = [];
+    const postMat = new THREE.MeshLambertMaterial({ color: 0x3a3f30 });
+    const stripes = stripeTexture();
+    for (const row of L.rows) {
+      const z = -row.d;
+      if (row.type === 'gate') {
+        const g = { d: row.d, opts: row.opts, passed: false, chosen: -1, fade: 0, halves: [] };
+        row.opts.forEach((o, idx) => {
+          const half = new THREE.Group();
+          const xc = idx === 0 ? -HALF / 2 : HALF / 2;
+          const mat = new THREE.MeshBasicMaterial({ map: gateTexture(opLabel(o), isGood(o)), transparent: true, depthWrite: false, side: THREE.DoubleSide });
+          const panel = new THREE.Mesh(new THREE.PlaneGeometry(5.5, 2.75), mat);
+          panel.position.set(xc, 1.95, z);
+          half.add(panel);
+          for (const s of [-1, 1]) {
+            const post = new THREE.Mesh(new THREE.BoxGeometry(0.28, 3.5, 0.28), postMat);
+            post.position.set(xc + s * 2.82, 1.75, z);
+            half.add(post);
+          }
+          levelGroup.add(half);
+          g.halves.push({ group: half, panel, mat });
+        });
+        gates.push(g);
+      } else if (row.type === 'obstacle') {
+        const grp = new THREE.Group();
+        const tex = stripes.clone(); tex.needsUpdate = true; tex.repeat.set(row.w / 1.2, 1);
+        const wall = new THREE.Mesh(new THREE.BoxGeometry(row.w, 1.1, 0.5), new THREE.MeshLambertMaterial({ map: tex }));
+        wall.position.y = 0.55;
+        grp.add(wall);
+        const coil = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, row.w, 10, 1, true), new THREE.MeshBasicMaterial({ color: 0x4a4a42, wireframe: true }));
+        coil.rotation.z = Math.PI / 2; coil.position.y = 1.4;
+        grp.add(coil);
+        grp.position.set(row.c0, 0, z);
+        levelGroup.add(grp);
+        obstacles.push({ d: row.d, w: row.w, c0: row.c0, move: row.move, phase: row.phase, group: grp, cx: row.c0 });
+      } else {
+        squads.push({ d: row.d, x: row.x, count: row.count, units: [], alive: true, cap: CAP_SQUAD, tag: makeTag('enemy'), final: false });
+      }
+    }
+    // Armée finale + fort
+    squads.push({ d: finalD, x: 0, count: L.finalCount, units: [], alive: true, cap: CAP_FINAL, tag: makeTag('enemy'), final: true });
+    const fort = new THREE.Group();
+    const stone = new THREE.MeshLambertMaterial({ color: COL.stone });
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(16, 4, 2), stone); wall.position.y = 2; fort.add(wall);
+    for (const s of [-1, 1]) {
+      const tower = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.8, 6.5, 8), stone);
+      tower.position.set(s * 8, 3.25, 0); fort.add(tower);
+    }
+    const door = new THREE.Mesh(new THREE.BoxGeometry(4, 3, 0.2), new THREE.MeshLambertMaterial({ color: 0x3a2e22 }));
+    door.position.set(0, 1.5, 1.02); fort.add(door);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 4, 6), postMat);
+    pole.position.set(0, 6, 0); fort.add(pole);
+    fortressFlag = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 1.3), new THREE.MeshLambertMaterial({ color: COL.enemy, side: THREE.DoubleSide }));
+    fortressFlag.position.set(1.1, 7.3, 0); fort.add(fortressFlag);
+    fort.position.set(0, 0, -(finalD + 16));
+    levelGroup.add(fort);
+
+    // Armée de départ
+    ally.count = startCount; ally.cx = 0; ally.d = 0; ally.units = [];
+    syncUnits(ally, CAP_ALLY, 0, false);
+    for (const s of squads) syncUnits(s, s.cap, 0, false);
+    allyTag = makeTag('ally');
+    battle = null;
+    updateHud();
+  }
+
+  function syncUnits(g, cap, xc, fx) {
+    const want = Math.min(g.count, cap);
+    while (g.units.length < want) g.units.push({ x: (Math.random() - 0.5) * 0.4, z: (Math.random() - 0.5) * 0.4 });
+    while (g.units.length > want) {
+      const u = g.units.pop();
+      if (fx) burst(clampX(xc + u.x), -g.d + u.z, g === ally ? COL.ally : COL.enemy, 3);
+    }
+  }
+  function clampX(x) { return Math.max(-UNIT_CLAMP, Math.min(UNIT_CLAMP, x)); }
+  function formUpdate(g, dt) {
+    const n = g.units.length, xs = xScale(n), k = 1 - Math.exp(-9 * dt);
+    for (let i = 0; i < n; i++) {
+      const u = g.units[i];
+      u.x += (BX[i] * xs - u.x) * k;
+      u.z += (BZ[i] - u.z) * k;
+    }
+  }
+
+  // ---------- Son ----------
+  let actx = null, lastHit = 0;
+  function tone(type, f1, f2, dur, vol, delay) {
+    if (!actx || muted) return;
+    const t = actx.currentTime + (delay || 0);
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(f1, t);
+    o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(g); g.connect(actx.destination);
+    o.start(t); o.stop(t + dur + 0.02);
+  }
+  function sfx(kind) {
+    if (kind === 'good') tone('triangle', 520, 1040, 0.22, 0.2);
+    else if (kind === 'bad') tone('sawtooth', 240, 110, 0.3, 0.1);
+    else if (kind === 'hit') { if (time - lastHit > 0.06) { lastHit = time; tone('square', 150 + Math.random() * 90, 70, 0.06, 0.05); } }
+    else if (kind === 'win') [523, 659, 784, 1046].forEach((f, i) => tone('triangle', f, f * 1.01, 0.25, 0.18, i * 0.11));
+    else if (kind === 'lose') [392, 311, 233].forEach((f, i) => tone('sawtooth', f, f * 0.97, 0.3, 0.09, i * 0.16));
+  }
+  function ensureAudio() {
+    try {
+      if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+      if (actx.state === 'suspended') actx.resume();
+    } catch (e) { actx = null; }
+  }
+
+  // ---------- Contrôles ----------
+  let dragging = false, lastX = 0;
+  const keys = {};
+  container.addEventListener('pointerdown', (e) => { dragging = true; lastX = e.clientX; try { container.setPointerCapture(e.pointerId); } catch (_) {} });
+  container.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const w = container.clientWidth || window.innerWidth;
+    const dx = (e.clientX - lastX) / w;
+    lastX = e.clientX;
+    if (state === 'run' || state === 'battle') ally.cx = Math.max(-CX_CLAMP, Math.min(CX_CLAMP, ally.cx + dx * 15));
+  });
+  const endDrag = () => { dragging = false; };
+  container.addEventListener('pointerup', endDrag);
+  container.addEventListener('pointercancel', endDrag);
+  window.addEventListener('keydown', (e) => { keys[e.key.toLowerCase()] = true; });
+  window.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
+
+  // ---------- Interface ----------
+  function recruitCost() { return 30 + save.recruit * 25; }
+  function updateHud() {
+    $('hudLevel').textContent = save.level;
+    $('hudMedals').textContent = save.medals;
+    $('menuOp').textContent = 'Opération ' + save.level;
+    $('menuMedals').textContent = save.medals;
+    const n = 1 + save.recruit;
+    $('recruitLabel').textContent = 'Recruter : ' + n + (n > 1 ? ' soldats' : ' soldat') + ' au départ';
+    $('recruitCost').textContent = '★ ' + recruitCost();
+    $('recruitBtn').disabled = save.medals < recruitCost();
+    $('muteBtn').textContent = muted ? 'Muet' : 'Son';
+    $('muteBtn').setAttribute('aria-pressed', String(muted));
+  }
+  function persist() { store.set('save', save); }
+
+  $('playBtn').addEventListener('click', () => {
+    ensureAudio();
+    $('menu').hidden = true;
+    $('hud').hidden = false;
+    state = 'run';
+  });
+  $('recruitBtn').addEventListener('click', () => {
+    const c = recruitCost();
+    if (save.medals < c) return;
+    save.medals -= c; save.recruit += 1;
+    persist(); updateHud(); buildLevel();
+    sfx('good');
+  });
+  $('muteBtn').addEventListener('click', () => { muted = !muted; store.set('muted', muted); updateHud(); });
+  $('endBtn').addEventListener('click', () => {
+    $('end').hidden = true;
+    buildLevel();
+    state = 'run';
+  });
+  $('menuBtn').addEventListener('click', () => {
+    $('end').hidden = true; $('hud').hidden = true; $('menu').hidden = false;
+    buildLevel(); state = 'menu';
+  });
+
+  function showEnd(win, survivors, earned) {
+    const panel = $('endPanel');
+    panel.className = 'panel ' + (win ? 'result-win' : 'result-lose');
+    $('endOp').textContent = 'Opération ' + (win ? save.level - 1 : save.level);
+    $('endTitle').textContent = win ? 'Mission accomplie' : 'Mission échouée';
+    $('endStatLabel').textContent = win ? 'Survivants' : 'Ennemis restants';
+    $('endSurvivors').textContent = survivors;
+    $('endMedals').textContent = '+' + earned;
+    $('endBtn').textContent = win ? 'Opération suivante' : 'Réessayer';
+    $('end').hidden = false;
+    updateHud();
+  }
+
+  // ---------- Boucle de jeu ----------
+  const v3 = new THREE.Vector3();
+  const camLook = new THREE.Vector3(0, 0.5, -10);
+  const camTarget = new THREE.Vector3();
+  const mtx = new THREE.Matrix4();
+  const rotPi = new THREE.Matrix4().makeRotationY(Math.PI);
+  let last = performance.now();
+
+  function placeTag(el, x, y, z) {
+    v3.set(x, y, z).project(camera);
+    if (v3.z > 1 || v3.z < -1 || Math.abs(v3.x) > 1.2 || Math.abs(v3.y) > 1.2) { el.hidden = true; return; }
+    const w = container.clientWidth || window.innerWidth, h = container.clientHeight || window.innerHeight;
+    el.hidden = false;
+    el.style.transform = 'translate(' + ((v3.x * 0.5 + 0.5) * w).toFixed(1) + 'px,' + ((-v3.y * 0.5 + 0.5) * h).toFixed(1) + 'px) translate(-50%,-100%)';
+  }
+
+  function nextSquad() { for (const s of squads) if (s.alive) return s; return null; }
+
+  function step(dt) {
+    time += dt;
+    const running = state === 'run' || state === 'battle';
+
+    // Direction au clavier (flèches, Q/D, A/D)
+    if (running) {
+      const dir = (keys['arrowright'] || keys['d'] ? 1 : 0) - (keys['arrowleft'] || keys['q'] || keys['a'] ? 1 : 0);
+      if (dir) ally.cx = Math.max(-CX_CLAMP, Math.min(CX_CLAMP, ally.cx + dir * 9 * dt));
+    }
+
+    if (state === 'run') {
+      ally.d += SPEED * dt;
+
+      // Portes
+      for (const g of gates) {
+        if (!g.passed && ally.d >= g.d) {
+          g.passed = true;
+          g.chosen = ally.cx < 0 ? 0 : 1;
+          const o = g.opts[g.chosen];
+          const before = ally.count;
+          ally.count = applyOp(ally.count, o);
+          if (ally.count < before) syncUnits(ally, CAP_ALLY, ally.cx, true);
+          sfx(ally.count >= before ? 'good' : 'bad');
+          if (allyTag) bump(allyTag);
+          if (ally.count <= 0) { lose(); return; }
+        }
+      }
+
+      // Combat
+      const s = nextSquad();
+      if (s) {
+        const rA = radiusOf(ally.units.length), rE = radiusOf(s.units.length);
+        if ((s.d - rE) - (ally.d + rA) < 0.6) { battle = s; battleAcc = 0; state = 'battle'; }
+      }
+    }
+
+    if (state === 'battle' && battle) {
+      const s = battle;
+      const rate = Math.min(280, Math.max(14, (ally.count + s.count) * 1.1));
+      battleAcc += rate * dt;
+      let k = Math.floor(battleAcc);
+      battleAcc -= k;
+      k = Math.min(k, ally.count, s.count);
+      if (k > 0) {
+        ally.count -= k; s.count -= k;
+        syncUnits(ally, CAP_ALLY, ally.cx, true);
+        syncUnits(s, s.cap, s.x, true);
+        sfx('hit');
+      }
+      // les deux armées se rapprochent
+      const gap = s.d - ally.d;
+      if (gap > 0.5) { ally.d += Math.min(gap - 0.5, 4 * dt); s.d -= Math.min(gap - 0.5, 2.5 * dt); }
+      s.x += (ally.cx - s.x) * Math.min(1, dt * 1.5);
+      if (ally.count <= 0) { lose(); return; }
+      if (s.count <= 0) {
+        s.alive = false; s.tag.hidden = true;
+        battle = null;
+        if (s.final) win(); else state = 'run';
+      }
+    }
+
+    // Barricades : chaque soldat qui la touche tombe
+    if (running) {
+      for (const ob of obstacles) {
+        ob.cx = ob.move ? Math.sin(time * 1.3 + ob.phase) * (HALF - ob.w / 2) : ob.c0;
+        ob.group.position.x = ob.cx;
+        const oz = -ob.d;
+        if (Math.abs(oz + ally.d) > 14) continue;
+        const xa = ob.cx - ob.w / 2 - 0.15, xb = ob.cx + ob.w / 2 + 0.15;
+        const n = ally.units.length;
+        if (!n) continue;
+        const weight = ally.count / n;
+        let killed = 0;
+        for (let i = n - 1; i >= 0; i--) {
+          const u = ally.units[i];
+          const wx = clampX(ally.cx + u.x), wz = -ally.d + u.z;
+          if (Math.abs(wz - oz) < 0.35 && wx > xa && wx < xb) {
+            ally.units.splice(i, 1);
+            burst(wx, wz, COL.ally, 3);
+            killed++;
+          }
+        }
+        if (killed) {
+          ally.count = Math.max(0, ally.count - Math.max(killed, Math.round(killed * weight)));
+          syncUnits(ally, CAP_ALLY, ally.cx, true);
+          sfx('hit');
+          if (ally.count <= 0) { lose(); return; }
+        }
+      }
+    } else {
+      for (const ob of obstacles) if (ob.move) { ob.cx = Math.sin(time * 1.3 + ob.phase) * (HALF - ob.w / 2); ob.group.position.x = ob.cx; }
+    }
+
+    if (state === 'victory') {
+      stateTimer += dt;
+      if (ally.d < finalD + 11) ally.d += SPEED * 0.6 * dt;
+      if (fortressFlag) fortressFlag.material.color.lerp(tmpColor.set(COL.ally), Math.min(1, dt * 3));
+      if (stateTimer > 1.6) { state = 'done'; showEnd(true, ally.count, lastEarned); }
+    }
+    if (state === 'defeat') {
+      stateTimer += dt;
+      if (stateTimer > 1.0) { state = 'done'; showEnd(false, lastEnemyLeft, 0); }
+    }
+
+    // Animation des portes franchies
+    for (const g of gates) {
+      if (!g.passed || g.fade >= 1) continue;
+      g.fade = Math.min(1, g.fade + dt * 2.2);
+      g.halves.forEach((h, idx) => {
+        if (idx === g.chosen) { h.mat.opacity = 1 - g.fade; h.panel.scale.setScalar(1 + g.fade * 0.4); }
+        else { h.mat.opacity = 1 - g.fade; }
+        h.group.position.y = -g.fade * 4;
+        if (g.fade >= 1) h.group.visible = false;
+      });
+    }
+
+    syncUnits(ally, CAP_ALLY, ally.cx, false);
+    formUpdate(ally, dt);
+    for (const s of squads) if (s.alive) formUpdate(s, dt);
+  }
+
+  let lastEarned = 0, lastEnemyLeft = 0;
+  function win() {
+    state = 'victory'; stateTimer = 0;
+    lastEarned = Math.round(ally.count * 0.5) + 10 + save.level * 2;
+    save.medals += lastEarned;
+    save.level += 1;
+    persist();
+    sfx('win');
+  }
+  function lose() {
+    state = 'defeat'; stateTimer = 0;
+    const s = battle || nextSquad();
+    lastEnemyLeft = s ? s.count : 0;
+    battle = null;
+    sfx('lose');
+  }
+
+  function render() {
+    // Soldats alliés
+    const bobT = time * 12;
+    const n = ally.units.length;
+    for (let i = 0; i < n; i++) {
+      const u = ally.units[i];
+      const moving = state === 'run' || state === 'battle' || state === 'victory';
+      const y = moving ? Math.abs(Math.sin(bobT + i * 1.7)) * 0.12 : 0;
+      mtx.makeTranslation(clampX(ally.cx + u.x), y, -ally.d + u.z);
+      allyMesh.setMatrixAt(i, mtx);
+    }
+    allyMesh.count = n;
+    allyMesh.instanceMatrix.needsUpdate = true;
+
+    // Soldats ennemis (seulement les escouades proches)
+    let e = 0;
+    for (const s of squads) {
+      if (!s.alive || s.d - ally.d > 150 || s.d - ally.d < -20) { s.tag.hidden = true; continue; }
+      for (let i = 0; i < s.units.length && e < CAP_ENEMY_TOTAL; i++) {
+        const u = s.units[i];
+        const y = battle === s ? Math.abs(Math.sin(bobT * 0.8 + i)) * 0.12 : 0;
+        mtx.copy(rotPi).setPosition(clampX(s.x + u.x), y, -s.d + u.z);
+        enemyMesh.setMatrixAt(e++, mtx);
+      }
+      setTag(s.tag, s.count);
+      placeTag(s.tag, s.x, 2.4, -s.d);
+    }
+    enemyMesh.count = e;
+    enemyMesh.instanceMatrix.needsUpdate = true;
+
+    // Particules
+    const dt = lastDt;
+    let pc = 0;
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const p = parts[i];
+      p.life -= dt;
+      if (p.life <= 0) { parts.splice(i, 1); continue; }
+      p.vy -= 14 * dt;
+      p.x += p.vx * dt; p.y = Math.max(0.07, p.y + p.vy * dt); p.z += p.vz * dt;
+      const s = Math.max(0.01, p.life / 0.7);
+      mtx.makeScale(s, s, s).setPosition(p.x, p.y, p.z);
+      partMesh.setMatrixAt(pc, mtx);
+      partMesh.setColorAt(pc, tmpColor.set(p.color));
+      pc++;
+    }
+    partCursor = Math.min(partCursor, Math.max(0, parts.length - 1));
+    partMesh.count = pc;
+    partMesh.instanceMatrix.needsUpdate = true;
+    if (partMesh.instanceColor) partMesh.instanceColor.needsUpdate = true;
+
+    // Caméra
+    const r = Math.min(radiusOf(n), 7);
+    camTarget.set(ally.cx * 0.45, 8 + r * 0.6, -ally.d + 11 + r * 0.8);
+    const k = 1 - Math.exp(-4 * dt);
+    camera.position.lerp(camTarget, k);
+    camLook.lerp(v3.set(ally.cx * 0.3, 0.5, -ally.d - 10), k);
+    camera.lookAt(camLook);
+
+    // Étiquettes
+    if (allyTag) {
+      setTag(allyTag, ally.count);
+      if (state === 'done' && !$('end').hidden) allyTag.hidden = true;
+      else placeTag(allyTag, ally.cx, 2.1, -ally.d);
+    }
+    $('hudProgress').style.width = Math.min(100, (ally.d / finalD) * 100).toFixed(1) + '%';
+
+    renderer.render(scene, camera);
+  }
+
+  let lastDt = 0.016;
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    lastDt = dt;
+    if (state !== 'menu') step(dt);
+    else { time += dt; syncUnits(ally, CAP_ALLY, 0, false); formUpdate(ally, dt); }
+    render();
+    requestAnimationFrame(frame);
+  }
+
+  window.__renforts = { get state() { return state; }, get count() { return ally.count; }, get d() { return ally.d; }, get finalD() { return finalD; }, steer(x) { ally.cx = x; }, nextGate() { const g = gates.find((g) => !g.passed); return g ? { d: g.d, opts: g.opts } : null; } };
+
+  function start(data) {
+    const saved = store.get('save', null);
+    if (saved && typeof saved.level === 'number') save = Object.assign(save, saved);
+    if (data && data.save) save = Object.assign(save, data.save);
+    muted = !!store.get('muted', false);
+    window.claude?.hot?.snapshot?.(() => ({ save }));
+    resize();
+    const go = () => { buildLevel(); camera.position.set(0, 9, 12); requestAnimationFrame((t) => { last = t; frame(t); }); };
+    // on attend la police des portes (au plus 1,5 s)
+    let started = false;
+    const once = () => { if (!started) { started = true; go(); } };
+    try { Promise.race([document.fonts.load('150px "Black Ops One"'), new Promise((r) => setTimeout(r, 1500))]).then(once, once); }
+    catch (e) { once(); }
+  }
+
+  window.claude?.hot?.ready ? window.claude.hot.ready(start) : start(window.claude?.hot?.data ?? {});
+})();
+</script>
