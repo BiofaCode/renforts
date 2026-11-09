@@ -296,7 +296,40 @@ body {
   scene.background = new THREE.Color(COL.sky);
   scene.fog = new THREE.Fog(COL.sky, 55, 165);
   const camera = new THREE.PerspectiveCamera(55, 1, 0.5, 400);
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x5f7340, 0.8));
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x5f7340, 0.8);
+  scene.add(hemi);
+
+  const SKY_R = 330;
+  const skyGeo = new THREE.SphereGeometry(SKY_R, 24, 12);
+  skyGeo.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(skyGeo.attributes.position.count * 3), 3));
+  const skyDome = new THREE.Mesh(skyGeo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false }));
+  skyDome.renderOrder = -1;
+  scene.add(skyDome);
+  function paintSky(top, horizon) {
+    const pos = skyGeo.attributes.position, col = skyGeo.attributes.color;
+    const a = new THREE.Color(top), b = new THREE.Color(horizon), c = new THREE.Color();
+    for (let i = 0; i < pos.count; i++) {
+      const t = Math.pow(Math.max(0, pos.getY(i) / SKY_R), 0.55);
+      c.copy(b).lerp(a, t);
+      col.setXYZ(i, c.r, c.g, c.b);
+    }
+    col.needsUpdate = true;
+  }
+  // Chaîne de montagnes à l'horizon (suit la caméra, estompée par le brouillard)
+  const mountainMat = new THREE.MeshLambertMaterial({ color: 0x7c93a6, flatShading: true });
+  const mountains = new THREE.Group();
+  {
+    const r = mulberry32(99);
+    for (let i = 0; i < 26; i++) {
+      const a = -Math.PI * 0.95 + (i / 25) * Math.PI * 0.9 + (r() - 0.5) * 0.08;
+      const dist = 148 + r() * 14, h = 9 + r() * 15, w = 20 + r() * 20;
+      const m = new THREE.Mesh(new THREE.ConeGeometry(w, h, 5 + Math.floor(r() * 3)), mountainMat);
+      m.position.set(Math.cos(a) * dist, h / 2 - 1.5, Math.sin(a) * dist);
+      m.rotation.y = r() * 6;
+      mountains.add(m);
+    }
+  }
+  scene.add(mountains);
   const sun = new THREE.DirectionalLight(0xfff4e0, 0.7);
   sun.position.set(-8, 20, 10);
   scene.add(sun);
@@ -330,10 +363,11 @@ body {
     g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
     return g;
   }
-  function makeSoldier(body, legs, helm) {
+  function makeSoldier(body, legs, helm, withLegs) {
     const g = mergeParts([
-      { geo: new THREE.BoxGeometry(0.26, 0.28, 0.16).translate(0, 0.14, 0), color: legs },
+      { geo: new THREE.BoxGeometry(withLegs === false ? 0.01 : 0.26, withLegs === false ? 0.01 : 0.28, withLegs === false ? 0.01 : 0.16).translate(0, 0.14, 0), color: legs },
       { geo: new THREE.BoxGeometry(0.34, 0.34, 0.22).translate(0, 0.45, 0), color: body },
+      { geo: new THREE.BoxGeometry(0.36, 0.06, 0.24).translate(0, 0.31, 0), color: 0x3b2f22 },
       { geo: new THREE.SphereGeometry(0.13, 8, 6).translate(0, 0.73, 0), color: COL.skin },
       { geo: new THREE.SphereGeometry(0.16, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, 0.76, 0), color: helm },
       { geo: new THREE.BoxGeometry(0.05, 0.05, 0.44).translate(0.21, 0.47, -0.12), color: COL.gun }
@@ -341,10 +375,35 @@ body {
     g.scale(1.25, 1.25, 1.25);
     return g;
   }
+  // Une jambe : le haut de la boîte est la hanche (pivot de l'animation)
+  function makeLeg(color) {
+    const g = mergeParts([
+      { geo: new THREE.BoxGeometry(0.12, 0.3, 0.15).translate(0, -0.15, 0), color },
+      { geo: new THREE.BoxGeometry(0.13, 0.07, 0.19).translate(0, -0.27, -0.02), color: 0x2a2219 }
+    ]);
+    g.scale(1.25, 1.25, 1.25);
+    return g;
+  }
+  const HIP_Y = 0.36, LEG_X = 0.088;
   const vcMat = new THREE.MeshLambertMaterial({ vertexColors: true });
-  const allyMesh = new THREE.InstancedMesh(makeSoldier(COL.ally, COL.allyLegs, COL.helmA), vcMat, CAP_ALLY);
-  const enemyMesh = new THREE.InstancedMesh(makeSoldier(COL.enemy, COL.enemyLegs, COL.helmE), vcMat, CAP_ENEMY_TOTAL);
-  for (const m of [allyMesh, enemyMesh]) {
+  const allyMesh = new THREE.InstancedMesh(makeSoldier(COL.ally, COL.allyLegs, COL.helmA, false), vcMat, CAP_ALLY);
+  const enemyMesh = new THREE.InstancedMesh(makeSoldier(COL.enemy, COL.enemyLegs, COL.helmE, false), vcMat, CAP_ENEMY_TOTAL);
+  const allyLegs = new THREE.InstancedMesh(makeLeg(COL.allyLegs), vcMat, CAP_ALLY * 2);
+  const enemyLegs = new THREE.InstancedMesh(makeLeg(COL.enemyLegs), vcMat, CAP_ENEMY_TOTAL * 2);
+  // Ombres douces sous chaque soldat
+  function blobTexture() {
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const x = c.getContext('2d'), g = x.createRadialGradient(32, 32, 2, 32, 32, 31);
+    g.addColorStop(0, 'rgba(20,24,16,0.5)'); g.addColorStop(1, 'rgba(20,24,16,0)');
+    x.fillStyle = g; x.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(c);
+  }
+  const shadowMesh = new THREE.InstancedMesh(
+    new THREE.PlaneGeometry(0.85, 0.85).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ map: blobTexture(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
+    CAP_ALLY + CAP_ENEMY_TOTAL);
+  shadowMesh.renderOrder = 1;
+  for (const m of [allyMesh, enemyMesh, allyLegs, enemyLegs, shadowMesh]) {
     m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     m.frustumCulled = false;
     m.count = 0;
@@ -431,10 +490,31 @@ body {
 
   // ---------- Décors (changent toutes les 3 opérations) ----------
   const BIOMES = [
-    { name: 'Plaine', kind: 'pine', sky: 0xa9cbe0, ground: 0x86a453, road: 0xb59f74, rail: 0x8a7b5c },
-    { name: 'Désert', kind: 'cactus', sky: 0xeccfa0, ground: 0xd9b47a, road: 0x9c8466, rail: 0x7a5f43 },
-    { name: 'Neige', kind: 'snow', sky: 0xc9d8e6, ground: 0xeef2f5, road: 0x8f969c, rail: 0x5f666c }
+    { name: 'Plaine', kind: 'pine', sky: 0xbcd6e6, top: 0x4f8fd0, mount: 0x89a3b5, rock: 0x8a8d84, bags: 0xb9a77a, ground: 0x86a453, road: 0xb59f74, rail: 0x8a7b5c, hemiG: 0x5f7340 },
+    { name: 'Désert', kind: 'cactus', sky: 0xf1d9b0, top: 0x6fa6d6, mount: 0xc99a6c, rock: 0xb07a4a, bags: 0xc9b385, ground: 0xd9b47a, road: 0x9c8466, rail: 0x7a5f43, hemiG: 0xa98455 },
+    { name: 'Neige', kind: 'snow', sky: 0xd6e2ec, top: 0x7ea3c6, mount: 0xb9c8d6, rock: 0x9aa4ad, bags: 0x9a8f72, ground: 0xeef2f5, road: 0x8f969c, rail: 0x5f666c, hemiG: 0xb8c4cc }
   ];
+  // Textures légères générées : variations de couleur du sol et de la route
+  function noiseTexture(base, w, h, blots, spread, edges) {
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const x = c.getContext('2d'), col = new THREE.Color(base), r = mulberry32(base & 0xffff);
+    x.fillStyle = '#' + col.getHexString(); x.fillRect(0, 0, w, h);
+    for (let i = 0; i < blots; i++) {
+      const k = 1 + (r() - 0.5) * spread, cc = col.clone().multiplyScalar(k);
+      x.fillStyle = 'rgba(' + Math.min(255, cc.r * 255 | 0) + ',' + Math.min(255, cc.g * 255 | 0) + ',' + Math.min(255, cc.b * 255 | 0) + ',0.5)';
+      const rad = 2 + r() * (w / 10);
+      x.beginPath(); x.arc(r() * w, r() * h, rad, 0, Math.PI * 2); x.fill();
+    }
+    if (edges) {
+      const dark = col.clone().multiplyScalar(0.78);
+      x.fillStyle = '#' + dark.getHexString();
+      x.fillRect(0, 0, w * 0.035, h); x.fillRect(w * 0.965, 0, w * 0.035, h);
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.anisotropy = 4;
+    return t;
+  }
   function biomeOf(lv) { return BIOMES[Math.floor((lv - 1) / 3) % BIOMES.length]; }
   function isBoss(lv) { return lv % 5 === 0; }
   function makeTreeGeo(B) {
@@ -573,16 +653,23 @@ body {
     const B = biomeOf(save.level);
     scene.background.set(B.sky);
     scene.fog.color.set(B.sky);
+    paintSky(B.top, B.sky);
+    mountainMat.color.set(B.mount);
+    hemi.groundColor.set(B.hemiG);
     const L = genLevel(save.level, startCount);
     finalD = L.finalD;
     const roadLen = finalD + 90;
     const roadMid = -(finalD + 60) / 2 + 15;
 
     // Sol, route, rails
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, roadLen + 300), new THREE.MeshLambertMaterial({ color: B.ground }));
+    const groundTex = noiseTexture(B.ground, 256, 256, 260, 0.22, false);
+    groundTex.repeat.set(400 / 24, (roadLen + 300) / 24);
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, roadLen + 300), new THREE.MeshLambertMaterial({ map: groundTex }));
     ground.rotation.x = -Math.PI / 2; ground.position.set(0, -0.35, roadMid);
     levelGroup.add(ground);
-    const road = new THREE.Mesh(new THREE.BoxGeometry(HALF * 2, 0.3, roadLen), new THREE.MeshLambertMaterial({ color: B.road }));
+    const roadTex = noiseTexture(B.road, 128, 256, 160, 0.12, true);
+    roadTex.repeat.set(1, roadLen / 14);
+    const road = new THREE.Mesh(new THREE.BoxGeometry(HALF * 2, 0.3, roadLen), new THREE.MeshLambertMaterial({ map: roadTex }));
     road.position.set(0, -0.15, roadMid);
     levelGroup.add(road);
     for (const s of [-1, 1]) {
@@ -611,6 +698,55 @@ body {
       trees.setMatrixAt(i, m4);
     }
     levelGroup.add(trees);
+
+    // Rochers dans les champs
+    const nRocks = Math.floor(roadLen / 7);
+    const rocks = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(0.9, 0), new THREE.MeshLambertMaterial({ color: B.rock, flatShading: true }), nRocks);
+    for (let i = 0; i < nRocks; i++) {
+      const side = i % 2 ? 1 : -1, sc = 0.4 + rnd() * 1.3;
+      m4.makeRotationFromEuler(new THREE.Euler(rnd() * 3, rnd() * 3, rnd() * 3));
+      m4.scale(new THREE.Vector3(sc, sc * 0.7, sc)).setPosition(side * (8 + rnd() * 34), sc * 0.25, 25 - rnd() * (roadLen + 30));
+      rocks.setMatrixAt(i, m4);
+    }
+    levelGroup.add(rocks);
+
+    // Murets de sacs de sable le long de la route
+    const bagParts = [];
+    for (let row = 0; row < 3; row++) {
+      for (let k = 0; k < 4 - row; k++) {
+        bagParts.push({ geo: new THREE.BoxGeometry(0.85, 0.32, 0.5).translate((k - (3 - row) / 2) * 0.88, 0.17 + row * 0.31, 0), color: new THREE.Color(B.bags).multiplyScalar(0.92 + ((k + row) % 2) * 0.1).getHex() });
+      }
+    }
+    const bagGeo = mergeParts(bagParts);
+    const nBags = Math.floor(roadLen / 22);
+    const bags = new THREE.InstancedMesh(bagGeo, new THREE.MeshLambertMaterial({ vertexColors: true }), nBags);
+    for (let i = 0; i < nBags; i++) {
+      const side = i % 2 ? 1 : -1;
+      m4.makeRotationY(Math.PI / 2 + (rnd() - 0.5) * 0.5).setPosition(side * (HALF + 1.9 + rnd() * 1.5), 0, 10 - i * 22 - rnd() * 8);
+      bags.setMatrixAt(i, m4);
+    }
+    levelGroup.add(bags);
+
+    // Le camp de départ : tentes, caisses et drapeau
+    const tentMat = new THREE.MeshLambertMaterial({ color: 0x5d6b3d, flatShading: true });
+    [[-10, 5], [10.5, 3], [-11, -5], [11, -7]].forEach(([tx, tz], i) => {
+      const tent = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 3.2, 3), tentMat);
+      tent.rotation.set(0, i % 2 ? 0.3 : -0.2, Math.PI / 2);
+      tent.rotation.order = 'YXZ';
+      tent.position.set(tx, 0.75, tz);
+      levelGroup.add(tent);
+    });
+    const campCrate = new THREE.MeshLambertMaterial({ color: 0x9a6b3c });
+    [[-7.8, 1, 0], [-7.6, -0.6, 0.4], [-7.7, 0.2, 0]].forEach(([cx, cz], i) => {
+      const c = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), campCrate);
+      c.position.set(cx, 0.45 + (i === 2 ? 0.9 : 0), cz);
+      c.rotation.y = i * 0.4;
+      levelGroup.add(c);
+    });
+    const campPole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 5, 6), new THREE.MeshLambertMaterial({ color: 0x3a3f30 }));
+    campPole.position.set(8, 2.5, 0); levelGroup.add(campPole);
+    const campFlag = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 1.1), new THREE.MeshLambertMaterial({ color: COL.ally, side: THREE.DoubleSide }));
+    campFlag.position.set(8.9, 4.4, 0); levelGroup.add(campFlag);
 
     // Lignes de jeu
     gates = []; obstacles = []; squads = []; mines = []; crates = [];
@@ -933,6 +1069,7 @@ body {
   const camBase = new THREE.Vector3(0, 9, 12);
   const mtx = new THREE.Matrix4();
   const rotPi = new THREE.Matrix4().makeRotationY(Math.PI);
+  const legRot = new THREE.Matrix4();
   let last = performance.now();
 
   function placeTag(el, x, y, z) {
@@ -1199,28 +1336,52 @@ body {
   }
 
   function render() {
-    // Soldats alliés
+    // Soldats alliés : corps, deux jambes qui alternent, ombre
     const bobT = time * 12;
     const n = ally.units.length;
+    const moving = state === 'run' || state === 'battle' || state === 'victory';
+    let sh = 0;
     for (let i = 0; i < n; i++) {
       const u = ally.units[i];
-      const moving = state === 'run' || state === 'battle' || state === 'victory';
-      const y = moving ? Math.abs(Math.sin(bobT + i * 1.7)) * 0.12 : 0;
-      mtx.makeTranslation(clampX(ally.cx + u.x), y + (u.y || 0), -ally.d + u.z);
+      const ph = bobT + i * 1.7;
+      const y = (moving ? Math.abs(Math.sin(ph)) * 0.1 : 0) + (u.y || 0);
+      const sw = moving ? Math.sin(ph) * 0.75 : 0;
+      const x = clampX(ally.cx + u.x), z = -ally.d + u.z;
+      mtx.makeTranslation(x, y, z);
       allyMesh.setMatrixAt(i, mtx);
+      mtx.makeRotationX(sw).setPosition(x - LEG_X, HIP_Y + y, z);
+      allyLegs.setMatrixAt(i * 2, mtx);
+      mtx.makeRotationX(-sw).setPosition(x + LEG_X, HIP_Y + y, z);
+      allyLegs.setMatrixAt(i * 2 + 1, mtx);
+      const ss = u.y ? Math.max(0.3, 1 - u.y * 0.15) : 1;
+      mtx.makeScale(ss, 1, ss).setPosition(x, 0.02, z);
+      shadowMesh.setMatrixAt(sh++, mtx);
     }
     allyMesh.count = n;
+    allyLegs.count = n * 2;
     allyMesh.instanceMatrix.needsUpdate = true;
+    allyLegs.instanceMatrix.needsUpdate = true;
 
     // Soldats ennemis (seulement les escouades proches)
     let e = 0;
     for (const s of squads) {
       if (!s.alive || s.d - ally.d > 150 || s.d - ally.d < -20) { s.tag.hidden = true; continue; }
+      const fighting = battle === s;
       for (let i = 0; i < s.units.length && e < CAP_ENEMY_TOTAL; i++) {
         const u = s.units[i];
-        const y = battle === s ? Math.abs(Math.sin(bobT * 0.8 + i)) * 0.12 : 0;
-        mtx.copy(rotPi).setPosition(clampX(s.x + u.x), y, -s.d + u.z);
-        enemyMesh.setMatrixAt(e++, mtx);
+        const ph = bobT * 0.8 + i;
+        const y = fighting ? Math.abs(Math.sin(ph)) * 0.1 : 0;
+        const sw = fighting ? Math.sin(ph) * 0.6 : 0;
+        const x = clampX(s.x + u.x), z = -s.d + u.z;
+        mtx.copy(rotPi).setPosition(x, y, z);
+        enemyMesh.setMatrixAt(e, mtx);
+        mtx.copy(rotPi).multiply(legRot.makeRotationX(sw)).setPosition(x + LEG_X, HIP_Y + y, z);
+        enemyLegs.setMatrixAt(e * 2, mtx);
+        mtx.copy(rotPi).multiply(legRot.makeRotationX(-sw)).setPosition(x - LEG_X, HIP_Y + y, z);
+        enemyLegs.setMatrixAt(e * 2 + 1, mtx);
+        mtx.makeTranslation(x, 0.02, z);
+        shadowMesh.setMatrixAt(sh++, mtx);
+        e++;
       }
       const boss = s.final && bossMesh;
       setTag(s.tag, boss ? 'Général · ' + s.count : s.count);
@@ -1240,6 +1401,10 @@ body {
       placeTag(c.tag, c.x, 2.3, -c.d);
     }
     enemyMesh.instanceMatrix.needsUpdate = true;
+    enemyLegs.count = e * 2;
+    enemyLegs.instanceMatrix.needsUpdate = true;
+    shadowMesh.count = sh;
+    shadowMesh.instanceMatrix.needsUpdate = true;
 
     // Particules
     const dt = lastDt;
@@ -1276,6 +1441,8 @@ body {
       shake *= Math.exp(-7 * lastRealDt);
     }
     camera.lookAt(camLook);
+    skyDome.position.copy(camera.position);
+    mountains.position.set(camera.position.x, 0, camera.position.z);
 
     // Étiquettes
     if (allyTag) {
