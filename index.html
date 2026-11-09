@@ -143,6 +143,24 @@ body {
 .upg:not([disabled]) .cost { color: var(--ink); background: var(--brass); border-radius: 6px; padding: 0 6px; }
 .upg[disabled] { opacity: .45; cursor: not-allowed; }
 .upg:focus-visible { outline: 3px solid var(--brass); outline-offset: 2px; }
+.overlay.center { justify-content: center; background: rgba(29, 36, 22, .4); pointer-events: auto; }
+.toast {
+  position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 72px); z-index: 6;
+  transform: translateX(-50%); width: max-content; max-width: calc(100% - 32px); box-sizing: border-box;
+  background: var(--paper); color: var(--ink);
+  border: 3px solid var(--ink); border-radius: 12px; box-shadow: 0 4px 0 var(--ink);
+  padding: 10px 14px; font-weight: 700; font-size: 15px; line-height: 1.3; text-align: center;
+  text-wrap: balance;
+  display: flex; flex-direction: column; align-items: center; gap: 10px; pointer-events: none;
+}
+.swipe { display: block; width: 150px; height: 6px; border-radius: 3px; background: rgba(29, 36, 22, .2); position: relative; }
+.swipe::after {
+  content: ""; position: absolute; top: 50%; left: 0; width: 24px; height: 24px; margin-top: -12px;
+  border-radius: 50%; background: var(--brass); border: 3px solid var(--ink); box-sizing: border-box;
+  animation: swipe 1.1s ease-in-out infinite alternate;
+}
+@keyframes swipe { from { left: 0; } to { left: calc(100% - 24px); } }
+@media (prefers-reduced-motion: reduce) { .swipe::after { animation: none; left: calc(50% - 12px); } }
 .tag.bonus span { background: var(--brass); color: var(--ink); }
 .panel { max-height: calc(100% - 8px); overflow-y: auto; }
 @media (max-height: 640px) { .logo { display: none; } .overlay { justify-content: flex-end; } }
@@ -187,6 +205,7 @@ body {
   <div class="chip">Op. <b id="hudLevel">1</b></div>
   <div class="progress" aria-hidden="true"><i id="hudProgress"></i></div>
   <div class="chip">★ <b id="hudMedals">0</b></div>
+  <button class="icon-btn" id="pauseBtn" type="button" aria-label="Mettre en pause">II</button>
   <button class="icon-btn" id="muteBtn" type="button">Son</button>
 </div>
 
@@ -224,6 +243,18 @@ body {
     <button class="btn secondary" id="menuBtn" type="button"><span>Retour au camp</span><span>⟵</span></button>
   </div>
 </div>
+
+<div class="overlay center" id="pause" hidden>
+  <div class="panel">
+    <div class="eyebrow" id="pauseOp">Opération 1</div>
+    <h2>Pause</h2>
+    <button class="btn" id="resumeBtn" type="button">Reprendre</button>
+    <button class="btn secondary" id="restartBtn" type="button"><span>Recommencer l'opération</span><span>↻</span></button>
+    <button class="btn secondary" id="quitBtn" type="button"><span>Retour au camp</span><span>⟵</span></button>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" hidden><span id="toastText"></span><i class="swipe" id="toastSwipe" hidden></i></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
@@ -813,13 +844,58 @@ body {
   }
   function persist() { store.set('save', save); }
 
-  $('playBtn').addEventListener('click', () => {
+  // ---------- Tutoriel ----------
+  let toastTimer = 0;
+  function showToast(text, swipe, dur) {
+    $('toastText').textContent = text;
+    $('toastSwipe').hidden = !swipe;
+    $('toast').hidden = false;
+    toastTimer = dur || 2.8;
+  }
+  function hideToast() { toastTimer = 0; $('toast').hidden = true; }
+  function hintOnce(key, text) {
+    save.seen = save.seen || {};
+    if (save.seen[key] || toastTimer > 0) return;
+    save.seen[key] = true;
+    persist();
+    showToast(text, false, 2.8);
+  }
+  function startRun() {
     ensureAudio();
-    $('menu').hidden = true;
+    $('menu').hidden = true; $('end').hidden = true; $('pause').hidden = true;
     $('hud').hidden = false;
+    paused = false;
     state = 'run';
     startMusic();
+    save.seen = save.seen || {};
+    if (!save.seen.intro) { save.seen.intro = true; persist(); showToast('Glisse à gauche ou à droite pour choisir ta porte', true, 4); }
+  }
+  function backToCamp() {
+    paused = false;
+    $('end').hidden = true; $('pause').hidden = true; $('hud').hidden = true; $('menu').hidden = false;
+    hideToast();
+    buildLevel(); state = 'menu'; stopMusic();
+  }
+
+  // ---------- Pause ----------
+  let paused = false;
+  function setPaused(p) {
+    if (p && !(state === 'run' || state === 'battle')) return;
+    paused = p;
+    $('pauseOp').textContent = 'Opération ' + save.level;
+    $('pause').hidden = !p;
+    if (p) { stopMusic(); $('resumeBtn').focus(); } else startMusic();
+  }
+  $('pauseBtn').addEventListener('click', () => setPaused(true));
+  $('resumeBtn').addEventListener('click', () => { ensureAudio(); setPaused(false); });
+  $('restartBtn').addEventListener('click', () => { buildLevel(); hideToast(); startRun(); });
+  $('quitBtn').addEventListener('click', backToCamp);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) setPaused(true); });
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' || e.key === 'p' || e.key === 'P') setPaused(!paused);
   });
+
+  $('playBtn').addEventListener('click', startRun);
   for (const key in UPG) {
     $(UPG[key].id).addEventListener('click', () => {
       ensureAudio();
@@ -832,17 +908,8 @@ body {
     });
   }
   $('muteBtn').addEventListener('click', () => { muted = !muted; store.set('muted', muted); applyMute(); updateHud(); });
-  $('endBtn').addEventListener('click', () => {
-    ensureAudio();
-    $('end').hidden = true;
-    buildLevel();
-    state = 'run';
-    startMusic();
-  });
-  $('menuBtn').addEventListener('click', () => {
-    $('end').hidden = true; $('hud').hidden = true; $('menu').hidden = false;
-    buildLevel(); state = 'menu'; stopMusic();
-  });
+  $('endBtn').addEventListener('click', () => { buildLevel(); startRun(); });
+  $('menuBtn').addEventListener('click', backToCamp);
 
   function showEnd(win, survivors, earned) {
     const panel = $('endPanel');
@@ -854,6 +921,7 @@ body {
     $('endMedals').textContent = '+' + earned;
     $('endBtn').textContent = win ? 'Opération suivante' : 'Réessayer';
     $('prime').hidden = true;
+    hideToast();
     $('end').hidden = false;
     updateHud();
   }
@@ -917,6 +985,14 @@ body {
           if (ally.count <= 0) { lose(); return; }
         }
       }
+
+      // Indices du tutoriel, la première fois qu'un élément arrive
+      const ahead = (dd) => dd - ally.d > 0 && dd - ally.d < 38;
+      if (crates.some((c) => !c.taken && ahead(c.d))) hintOnce('crate', 'Passe sur la caisse : des renforts tombent du ciel !');
+      else if (mines.some((m) => !m.done && ahead(-m.z))) hintOnce('mines', 'Champ de mines : évite les lumières rouges');
+      else if (obstacles.some((o) => ahead(o.d))) hintOnce('barricade', 'Barricade : contourne-la ou tu perds des soldats');
+      else if (bossMesh && finalD - ally.d < 70) hintOnce('boss', 'Un Général garde le fort. Arrive en force !');
+      else { const sq = nextSquad(); if (sq && !sq.final && ahead(sq.d)) hintOnce('squad', 'Escouade ennemie : chaque soldat en élimine un'); }
 
       // Caisses de renfort
       for (const c of crates) {
@@ -1220,7 +1296,8 @@ body {
     const dt = real * timeScale;
     lastDt = dt; lastRealDt = real;
     musicTick();
-    if (state !== 'menu') step(dt);
+    if (toastTimer > 0 && !paused) { toastTimer -= real; if (toastTimer <= 0) $('toast').hidden = true; }
+    if (state !== 'menu' && !paused) step(dt);
     else { time += dt; syncUnits(ally, CAP_ALLY, 0, false); formUpdate(ally, dt); }
     render();
     requestAnimationFrame(frame);
