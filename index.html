@@ -130,6 +130,22 @@ body {
 .btn.secondary:active { transform: translateY(1px); }
 .btn[disabled] { opacity: .45; cursor: not-allowed; }
 .hint { font-size: 13px; color: var(--olive); font-weight: 700; }
+.upgrades { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.upg {
+  cursor: pointer; touch-action: manipulation; min-width: 0;
+  border: 2px solid var(--ink); border-radius: 10px; background: transparent; color: var(--ink);
+  padding: 8px 4px; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  font-family: var(--font-ui);
+}
+.upg b { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+.upg small { font-size: 11px; font-weight: 700; color: var(--olive); white-space: nowrap; }
+.upg .cost { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.upg:not([disabled]) .cost { color: var(--ink); background: var(--brass); border-radius: 6px; padding: 0 6px; }
+.upg[disabled] { opacity: .45; cursor: not-allowed; }
+.upg:focus-visible { outline: 3px solid var(--brass); outline-offset: 2px; }
+.tag.bonus span { background: var(--brass); color: var(--ink); }
+.panel { max-height: calc(100% - 8px); overflow-y: auto; }
+@media (max-height: 640px) { .logo { display: none; } .overlay { justify-content: flex-end; } }
 .result-win h2 { color: var(--ally); }
 .result-lose h2 { color: var(--enemy); }
 
@@ -184,11 +200,13 @@ body {
   <div class="panel">
     <div class="eyebrow" id="menuOp">Opération 1</div>
     <h2>Traverse les portes, écrase l'armée rouge</h2>
-    <p>Glisse à gauche ou à droite pour choisir tes portes. Évite les barricades.</p>
+    <p>Glisse pour choisir tes portes. Ramasse les caisses, évite barricades et mines.</p>
     <button class="btn" id="playBtn" type="button">Lancer l'opération</button>
-    <button class="btn secondary" id="recruitBtn" type="button">
-      <span id="recruitLabel">Recruter : 1 soldat au départ</span><span id="recruitCost">★ 40</span>
-    </button>
+    <div class="upgrades" role="group" aria-label="Améliorations du camp">
+      <button class="upg" id="upRecruit" type="button" title="Plus de soldats au départ"><b>Recrues</b><small id="upRecruitLv">1 soldat</small><span class="cost" id="upRecruitCost">★ 40</span></button>
+      <button class="upg" id="upTraining" type="button" title="Tes soldats éliminent plus d'ennemis en combat"><b>Entraînement</b><small id="upTrainingLv">Niv. 0</small><span class="cost" id="upTrainingCost">★ 60</span></button>
+      <button class="upg" id="upLoot" type="button" title="Plus de médailles avec la prime du fort"><b>Butin</b><small id="upLootLv">Niv. 0</small><span class="cost" id="upLootCost">★ 50</span></button>
+    </div>
     <div class="hint">★ <span id="menuMedals">0</span> médailles</div>
   </div>
 </div>
@@ -232,7 +250,7 @@ body {
     get(k, d) { try { const v = localStorage.getItem('renforts.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem('renforts.' + k, JSON.stringify(v)); } catch (e) {} }
   };
-  let save = { level: 1, medals: 0, recruit: 0 };
+  let save = { level: 1, medals: 0, recruit: 0, training: 0, loot: 0 };
   let muted = false;
 
   // ---------- Éléments ----------
@@ -380,6 +398,32 @@ body {
     return t;
   }
 
+  // ---------- Décors (changent toutes les 3 opérations) ----------
+  const BIOMES = [
+    { name: 'Plaine', kind: 'pine', sky: 0xa9cbe0, ground: 0x86a453, road: 0xb59f74, rail: 0x8a7b5c },
+    { name: 'Désert', kind: 'cactus', sky: 0xeccfa0, ground: 0xd9b47a, road: 0x9c8466, rail: 0x7a5f43 },
+    { name: 'Neige', kind: 'snow', sky: 0xc9d8e6, ground: 0xeef2f5, road: 0x8f969c, rail: 0x5f666c }
+  ];
+  function biomeOf(lv) { return BIOMES[Math.floor((lv - 1) / 3) % BIOMES.length]; }
+  function isBoss(lv) { return lv % 5 === 0; }
+  function makeTreeGeo(B) {
+    const green = 0x4f8a3c;
+    if (B.kind === 'cactus') return mergeParts([
+      { geo: new THREE.CylinderGeometry(0.35, 0.42, 2.6, 7).translate(0, 1.3, 0), color: green },
+      { geo: new THREE.BoxGeometry(0.6, 0.26, 0.26).translate(0.4, 1.15, 0), color: green },
+      { geo: new THREE.CylinderGeometry(0.2, 0.2, 1.0, 6).translate(0.65, 1.6, 0), color: green },
+      { geo: new THREE.BoxGeometry(0.5, 0.22, 0.22).translate(-0.35, 1.55, 0), color: green },
+      { geo: new THREE.CylinderGeometry(0.18, 0.18, 0.8, 6).translate(-0.58, 1.9, 0), color: green }
+    ]);
+    const parts = [
+      { geo: new THREE.CylinderGeometry(0.18, 0.25, 1.2, 6).translate(0, 0.6, 0), color: 0x6b4f33 },
+      { geo: new THREE.ConeGeometry(1.2, 2.6, 7).translate(0, 2.3, 0), color: B.kind === 'snow' ? 0x2f5a3a : 0x3f6b35 },
+      { geo: new THREE.ConeGeometry(0.9, 1.9, 7).translate(0, 3.3, 0), color: B.kind === 'snow' ? 0x3a6b46 : 0x4c7d3d }
+    ];
+    if (B.kind === 'snow') parts.push({ geo: new THREE.ConeGeometry(0.58, 0.85, 7).translate(0, 3.95, 0), color: 0xffffff });
+    return mergeParts(parts);
+  }
+
   // ---------- Génération d'une opération ----------
   function mulberry32(a) {
     return function () {
@@ -417,8 +461,9 @@ body {
     for (let i = 0; i < n; i++) {
       let t = 'gate';
       const r = rnd();
-      if (i >= 2 && prev !== 'enemy' && r < 0.3) t = 'enemy';
-      else if (lv >= 2 && i >= 1 && prev !== 'obstacle' && r > 0.76) t = 'obstacle';
+      if (i >= 2 && prev !== 'enemy' && r < 0.28) t = 'enemy';
+      else if (lv >= 2 && i >= 1 && prev !== 'obstacle' && prev !== 'mines' && r > 0.8) t = (lv >= 3 && rnd() < 0.5) ? 'mines' : 'obstacle';
+      else if (lv >= 2 && i >= 1 && prev !== 'crate' && r > 0.68) t = 'crate';
       if (t === 'gate') {
         const a = good(), b = rnd() < 0.25 ? good() : bad();
         const opts = rnd() < 0.5 ? [a, b] : [b, a];
@@ -429,6 +474,16 @@ body {
         const c = Math.max(3, Math.round(E * (0.28 + rnd() * 0.22)));
         rows.push({ type: 'enemy', d: d + 4, count: c, x: (rnd() - 0.5) * 4 });
         E = Math.max(1, E - c);
+      } else if (t === 'mines') {
+        const mines = [];
+        const nm = Math.min(5 + Math.floor(lv / 2), 10);
+        for (let j = 0; j < nm; j++) mines.push({ x: (rnd() * 2 - 1) * (HALF - 0.8), dz: (rnd() * 2 - 1) * 4 });
+        rows.push({ type: 'mines', d, mines });
+        E = Math.max(1, Math.round(E * 0.88));
+      } else if (t === 'crate') {
+        const v = Math.max(5, Math.round(E * (0.25 + rnd() * 0.2)));
+        rows.push({ type: 'crate', d, x: [-3.6, 0, 3.6][ri(0, 2)], v });
+        E += Math.round(v * 0.6);
       } else {
         const w = 3.6 + rnd() * 1.2;
         const pos = ri(0, 2);
@@ -438,13 +493,16 @@ body {
       prev = t;
       d += 40 + rnd() * 12;
     }
-    const finalCount = Math.max(8, Math.round(E * Math.min(0.5 + lv * 0.04, 0.82)));
-    return { rows, finalD: d + 8, finalCount };
+    const boss = isBoss(lv);
+    const finalCount = Math.max(8, Math.round(E * Math.min(0.5 + lv * 0.04, 0.82) * (boss ? 1.25 : 1)));
+    return { rows, finalD: d + 8, finalCount, boss };
   }
 
   // ---------- État du jeu ----------
   let levelGroup = null;
-  let gates = [], obstacles = [], squads = [];
+  let gates = [], obstacles = [], squads = [], mines = [], crates = [];
+  let bossMesh = null, bossFall = 0, battleAccE = 0;
+  function power() { return 1 + 0.15 * (save.training || 0); }
   let finalD = 300, fortressFlag = null;
   const ally = { count: 1, cx: 0, d: 0, units: [] };
   let state = 'menu';      // menu | run | battle | victory | defeat | done
@@ -481,20 +539,23 @@ body {
     scene.add(levelGroup);
 
     const startCount = 1 + save.recruit;
+    const B = biomeOf(save.level);
+    scene.background.set(B.sky);
+    scene.fog.color.set(B.sky);
     const L = genLevel(save.level, startCount);
     finalD = L.finalD;
     const roadLen = finalD + 90;
     const roadMid = -(finalD + 60) / 2 + 15;
 
     // Sol, route, rails
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, roadLen + 300), new THREE.MeshLambertMaterial({ color: COL.ground }));
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, roadLen + 300), new THREE.MeshLambertMaterial({ color: B.ground }));
     ground.rotation.x = -Math.PI / 2; ground.position.set(0, -0.01, roadMid);
     levelGroup.add(ground);
-    const road = new THREE.Mesh(new THREE.BoxGeometry(HALF * 2, 0.3, roadLen), new THREE.MeshLambertMaterial({ color: COL.road }));
+    const road = new THREE.Mesh(new THREE.BoxGeometry(HALF * 2, 0.3, roadLen), new THREE.MeshLambertMaterial({ color: B.road }));
     road.position.set(0, -0.15, roadMid);
     levelGroup.add(road);
     for (const s of [-1, 1]) {
-      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.5, roadLen), new THREE.MeshLambertMaterial({ color: COL.rail }));
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.5, roadLen), new THREE.MeshLambertMaterial({ color: B.rail }));
       rail.position.set(s * (HALF + 0.17), 0.1, roadMid);
       levelGroup.add(rail);
     }
@@ -506,11 +567,7 @@ body {
     levelGroup.add(dashes);
 
     // Arbres
-    const treeGeo = mergeParts([
-      { geo: new THREE.CylinderGeometry(0.18, 0.25, 1.2, 6).translate(0, 0.6, 0), color: 0x6b4f33 },
-      { geo: new THREE.ConeGeometry(1.2, 2.6, 7).translate(0, 2.3, 0), color: 0x3f6b35 },
-      { geo: new THREE.ConeGeometry(0.9, 1.9, 7).translate(0, 3.3, 0), color: 0x4c7d3d }
-    ]);
+    const treeGeo = makeTreeGeo(B);
     const rnd = mulberry32(save.level * 31 + 5);
     const nTrees = Math.floor(roadLen / 4);
     const trees = new THREE.InstancedMesh(treeGeo, new THREE.MeshLambertMaterial({ vertexColors: true }), nTrees);
@@ -525,7 +582,13 @@ body {
     levelGroup.add(trees);
 
     // Lignes de jeu
-    gates = []; obstacles = []; squads = [];
+    gates = []; obstacles = []; squads = []; mines = []; crates = [];
+    const mineGeo = new THREE.CylinderGeometry(0.42, 0.48, 0.16, 12);
+    const mineMat = new THREE.MeshLambertMaterial({ color: 0x3d4430 });
+    const ledGeo = new THREE.SphereGeometry(0.09, 8, 6);
+    const ledMat = new THREE.MeshBasicMaterial({ color: 0xff3b2f });
+    const crateMat = new THREE.MeshLambertMaterial({ color: 0x9a6b3c });
+    const bandMat = new THREE.MeshLambertMaterial({ color: 0xf2b632 });
     const postMat = new THREE.MeshLambertMaterial({ color: 0x3a3f30 });
     const stripes = stripeTexture();
     for (const row of L.rows) {
@@ -560,12 +623,37 @@ body {
         grp.position.set(row.c0, 0, z);
         levelGroup.add(grp);
         obstacles.push({ d: row.d, w: row.w, c0: row.c0, move: row.move, phase: row.phase, group: grp, cx: row.c0 });
-      } else {
+      } else if (row.type === 'enemy') {
         squads.push({ d: row.d, x: row.x, count: row.count, units: [], alive: true, cap: CAP_SQUAD, tag: makeTag('enemy'), final: false });
+      } else if (row.type === 'mines') {
+        for (const mi of row.mines) {
+          const grp = new THREE.Group();
+          const disc = new THREE.Mesh(mineGeo, mineMat); disc.position.y = 0.08; grp.add(disc);
+          const led = new THREE.Mesh(ledGeo, ledMat); led.position.y = 0.2; grp.add(led);
+          const mz = -(row.d + mi.dz);
+          grp.position.set(mi.x, 0, mz);
+          levelGroup.add(grp);
+          mines.push({ x: mi.x, z: mz, group: grp, led, done: false, phase: Math.random() * 6 });
+        }
+      } else if (row.type === 'crate') {
+        const grp = new THREE.Group();
+        const box = new THREE.Mesh(new THREE.BoxGeometry(1.3, 1.3, 1.3), crateMat); box.position.y = 0.65; grp.add(box);
+        const band = new THREE.Mesh(new THREE.BoxGeometry(1.36, 0.26, 1.36), bandMat); band.position.y = 0.65; grp.add(band);
+        grp.position.set(row.x, 0, -row.d);
+        levelGroup.add(grp);
+        crates.push({ d: row.d, x: row.x, v: row.v, group: grp, taken: false, tag: makeTag('bonus') });
       }
     }
     // Armée finale + fort
     squads.push({ d: finalD, x: 0, count: L.finalCount, units: [], alive: true, cap: CAP_FINAL, tag: makeTag('enemy'), final: true });
+    bossMesh = null; bossFall = 0;
+    if (L.boss) {
+      bossMesh = new THREE.Mesh(makeSoldier(COL.enemy, COL.enemyLegs, 0xf2b632), new THREE.MeshLambertMaterial({ vertexColors: true }));
+      bossMesh.scale.setScalar(4);
+      bossMesh.rotation.y = Math.PI;
+      bossMesh.position.set(0, 0, -finalD - 1.5);
+      levelGroup.add(bossMesh);
+    }
     const fort = new THREE.Group();
     const stone = new THREE.MeshLambertMaterial({ color: COL.stone });
     const wall = new THREE.Mesh(new THREE.BoxGeometry(16, 4, 2), stone); wall.position.y = 2; fort.add(wall);
@@ -593,7 +681,7 @@ body {
 
   function syncUnits(g, cap, xc, fx) {
     const want = Math.min(g.count, cap);
-    while (g.units.length < want) g.units.push({ x: (Math.random() - 0.5) * 0.4, z: (Math.random() - 0.5) * 0.4 });
+    while (g.units.length < want) g.units.push({ x: (Math.random() - 0.5) * 0.4, z: (Math.random() - 0.5) * 0.4, y: g.dropY ? 2.5 + Math.random() * 2.5 : 0 });
     while (g.units.length > want) {
       const u = g.units.pop();
       if (fx) burst(clampX(xc + u.x), -g.d + u.z, g === ally ? COL.ally : COL.enemy, 3);
@@ -608,6 +696,7 @@ body {
       const u = g.units[i];
       u.x += (BX[i] * xs - u.x) * k;
       u.z += (BZ[i] - u.z) * k;
+      if (u.y) u.y = Math.max(0, u.y - 5 * dt);
     }
   }
 
@@ -658,6 +747,7 @@ body {
       if (time - lastHit > 0.06) { lastHit = time; noise(actx.currentTime, 0.06, 0.18, 700 + Math.random() * 500); tone('square', 150 + Math.random() * 90, 70, 0.05, 0.04); }
     }
     else if (kind === 'coin') { if (time - lastCoin > 0.05) { lastCoin = time; tone('square', 1300 + Math.random() * 300, 1800, 0.05, 0.035); } }
+    else if (kind === 'boom') { noise(actx.currentTime, 0.5, 0.7, 160); tone('sine', 110, 30, 0.45, 0.5); }
     else if (kind === 'win') [523, 659, 784, 1046].forEach((f, i) => tone('triangle', f, f * 1.01, 0.25, 0.18, i * 0.11));
     else if (kind === 'lose') [392, 311, 233].forEach((f, i) => tone('sawtooth', f, f * 0.97, 0.3, 0.09, i * 0.16));
   }
@@ -702,16 +792,22 @@ body {
   window.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
 
   // ---------- Interface ----------
-  function recruitCost() { return 40 + save.recruit * 40; }
+  const UPG = {
+    recruit: { id: 'upRecruit', max: 40, cost: (l) => 40 + l * 40, label: (l) => (1 + l) + (l ? ' soldats' : ' soldat') },
+    training: { id: 'upTraining', max: 10, cost: (l) => 60 + l * 60, label: (l) => l ? 'Niv. ' + l + ' · +' + (l * 15) + '%' : 'Niv. 0' },
+    loot: { id: 'upLoot', max: 10, cost: (l) => 50 + l * 50, label: (l) => l ? 'Niv. ' + l + ' · +' + (l * 20) + '%' : 'Niv. 0' }
+  };
   function updateHud() {
     $('hudLevel').textContent = save.level;
     $('hudMedals').textContent = save.medals;
-    $('menuOp').textContent = 'Opération ' + save.level;
+    $('menuOp').textContent = 'Opération ' + save.level + ' · ' + biomeOf(save.level).name + (isBoss(save.level) ? ' · Boss' : '');
     $('menuMedals').textContent = save.medals;
-    const n = 1 + save.recruit;
-    $('recruitLabel').textContent = 'Recruter : ' + n + (n > 1 ? ' soldats' : ' soldat') + ' au départ';
-    $('recruitCost').textContent = '★ ' + recruitCost();
-    $('recruitBtn').disabled = save.medals < recruitCost();
+    for (const key in UPG) {
+      const u = UPG[key], l = save[key] || 0, maxed = l >= u.max;
+      $(u.id + 'Lv').textContent = u.label(l);
+      $(u.id + 'Cost').textContent = maxed ? 'Max' : '★ ' + u.cost(l);
+      $(u.id).disabled = maxed || save.medals < u.cost(l);
+    }
     $('muteBtn').textContent = muted ? 'Muet' : 'Son';
     $('muteBtn').setAttribute('aria-pressed', String(muted));
   }
@@ -724,13 +820,17 @@ body {
     state = 'run';
     startMusic();
   });
-  $('recruitBtn').addEventListener('click', () => {
-    const c = recruitCost();
-    if (save.medals < c) return;
-    save.medals -= c; save.recruit += 1;
-    persist(); updateHud(); buildLevel();
-    sfx('good');
-  });
+  for (const key in UPG) {
+    $(UPG[key].id).addEventListener('click', () => {
+      ensureAudio();
+      const u = UPG[key], l = save[key] || 0, c = u.cost(l);
+      if (l >= u.max || save.medals < c) return;
+      save.medals -= c; save[key] = l + 1;
+      persist(); updateHud();
+      if (key === 'recruit') buildLevel();
+      sfx('good');
+    });
+  }
   $('muteBtn').addEventListener('click', () => { muted = !muted; store.set('muted', muted); applyMute(); updateHud(); });
   $('endBtn').addEventListener('click', () => {
     ensureAudio();
@@ -818,23 +918,44 @@ body {
         }
       }
 
+      // Caisses de renfort
+      for (const c of crates) {
+        if (c.taken || ally.d < c.d) continue;
+        c.taken = true;
+        if (Math.abs(ally.cx - c.x) < 2.4) {
+          ally.count += c.v;
+          ally.dropY = true;
+          syncUnits(ally, CAP_ALLY, ally.cx, false);
+          ally.dropY = false;
+          c.group.visible = false; c.tag.hidden = true;
+          for (let j = 0; j < 14; j++) addPart({ x: c.x, y: 0.8, z: -c.d, vx: (Math.random() - 0.5) * 6, vy: 3 + Math.random() * 4, vz: (Math.random() - 0.5) * 6, life: 0.8, max: 0.8, g: 12, size: 1.2, color: j % 2 ? 0x9a6b3c : 0xf2b632 });
+          floatText('+' + c.v, true);
+          sfx('good');
+          if (allyTag) bump(allyTag);
+        }
+      }
+
       // Combat
       const s = nextSquad();
       if (s) {
         const rA = radiusOf(ally.units.length), rE = radiusOf(s.units.length);
-        if ((s.d - rE) - (ally.d + rA) < 0.6) { battle = s; battleAcc = 0; state = 'battle'; }
+        if ((s.d - rE) - (ally.d + rA) < 0.6) { battle = s; battleAcc = 0; battleAccE = 0; state = 'battle'; }
       }
     }
 
     if (state === 'battle' && battle) {
       const s = battle;
       const rate = Math.min(280, Math.max(14, (ally.count + s.count) * 1.1));
-      battleAcc += rate * dt;
-      let k = Math.floor(battleAcc);
-      battleAcc -= k;
-      k = Math.min(k, ally.count, s.count);
+      battleAcc += rate * dt;            // pertes alliées
+      battleAccE += rate * power() * dt; // pertes ennemies (Entraînement)
+      let ka = Math.floor(battleAcc), ke = Math.floor(battleAccE);
+      battleAcc -= ka; battleAccE -= ke;
+      ke = Math.min(ke, s.count);
+      ka = Math.min(ka, ally.count);
+      if (s.count - ke <= 0) ka = Math.min(ka, Math.ceil(ke / power())); // les derniers ennemis ne valent pas plus qu'eux-mêmes
+      const k = Math.max(ka, ke);
       if (k > 0) {
-        ally.count -= k; s.count -= k;
+        ally.count -= ka; s.count -= ke;
         syncUnits(ally, CAP_ALLY, ally.cx, true);
         syncUnits(s, s.cap, s.x, true);
         sfx('hit');
@@ -881,6 +1002,30 @@ body {
           if (ally.count <= 0) { lose(); return; }
         }
       }
+      // Mines : explosent au contact et font tomber les soldats autour
+      for (const m of mines) {
+        if (m.done || Math.abs(m.z + ally.d) > 14 || !ally.units.length) continue;
+        let hit = false;
+        for (const u of ally.units) {
+          const wx = clampX(ally.cx + u.x), wz = -ally.d + u.z;
+          if (Math.abs(wx - m.x) < 0.55 && Math.abs(wz - m.z) < 0.55) { hit = true; break; }
+        }
+        if (!hit) continue;
+        m.done = true; m.group.visible = false;
+        const n = ally.units.length, weight = ally.count / n;
+        let killed = 0;
+        for (let i = n - 1; i >= 0; i--) {
+          const u = ally.units[i];
+          const wx = clampX(ally.cx + u.x), wz = -ally.d + u.z;
+          if ((wx - m.x) * (wx - m.x) + (wz - m.z) * (wz - m.z) < 2.9) { ally.units.splice(i, 1); burst(wx, wz, COL.ally, 2); killed++; }
+        }
+        for (let j = 0; j < 26; j++) addPart({ x: m.x, y: 0.3, z: m.z, vx: (Math.random() - 0.5) * 7, vy: 4 + Math.random() * 7, vz: (Math.random() - 0.5) * 7, life: 0.9, max: 0.9, g: 13, size: 1.5, color: [0xff8a3d, 0xffd166, 0x55584d][j % 3] });
+        addShake(0.3);
+        sfx('boom');
+        ally.count = Math.max(0, ally.count - Math.max(killed, Math.round(killed * weight)));
+        syncUnits(ally, CAP_ALLY, ally.cx, true);
+        if (ally.count <= 0) { lose(); return; }
+      }
     } else {
       for (const ob of obstacles) if (ob.move) { ob.cx = Math.sin(time * 1.3 + ob.phase) * (HALF - ob.w / 2); ob.group.position.x = ob.cx; }
     }
@@ -903,7 +1048,7 @@ body {
           if (inside) {
             const got = Math.min(ally.count, Math.max(inside, Math.round(inside * weight)));
             ally.count -= got;
-            for (let j = 0; j < got; j++) { primeSoldiers++; primeValue += 0.25 * primeMult(); }
+            for (let j = 0; j < got; j++) { primeSoldiers++; primeValue += 0.25 * primeMult() * (1 + 0.2 * (save.loot || 0)); }
             updatePrime();
             sfx('coin');
           }
@@ -922,6 +1067,8 @@ body {
       stateTimer += dt;
       if (stateTimer > 1.0) { state = 'done'; showEnd(false, lastEnemyLeft, 0); }
     }
+
+    for (const m of mines) if (!m.done) m.led.visible = Math.sin(time * 9 + m.phase) > 0;
 
     // Animation des portes franchies
     for (const g of gates) {
@@ -983,7 +1130,7 @@ body {
       const u = ally.units[i];
       const moving = state === 'run' || state === 'battle' || state === 'victory';
       const y = moving ? Math.abs(Math.sin(bobT + i * 1.7)) * 0.12 : 0;
-      mtx.makeTranslation(clampX(ally.cx + u.x), y, -ally.d + u.z);
+      mtx.makeTranslation(clampX(ally.cx + u.x), y + (u.y || 0), -ally.d + u.z);
       allyMesh.setMatrixAt(i, mtx);
     }
     allyMesh.count = n;
@@ -999,10 +1146,23 @@ body {
         mtx.copy(rotPi).setPosition(clampX(s.x + u.x), y, -s.d + u.z);
         enemyMesh.setMatrixAt(e++, mtx);
       }
-      setTag(s.tag, s.count);
-      placeTag(s.tag, s.x, 2.4, -s.d);
+      const boss = s.final && bossMesh;
+      setTag(s.tag, boss ? 'Général · ' + s.count : s.count);
+      placeTag(s.tag, s.x, boss ? 6.6 : 2.4, -s.d);
     }
     enemyMesh.count = e;
+
+    if (bossMesh) {
+      const fs = squads[squads.length - 1];
+      if (fs.alive) bossMesh.position.set(clampX(fs.x), Math.abs(Math.sin(time * 3)) * 0.15, -fs.d - 1.5);
+      else if (bossFall < 1) { bossFall = Math.min(1, bossFall + lastDt * 1.6); bossMesh.rotation.x = -bossFall * Math.PI / 2; bossMesh.position.y = 0; }
+    }
+    for (const c of crates) {
+      if (c.taken || c.d - ally.d > 120) { c.tag.hidden = true; continue; }
+      c.group.rotation.y = time * 1.2;
+      setTag(c.tag, '+' + c.v);
+      placeTag(c.tag, c.x, 2.3, -c.d);
+    }
     enemyMesh.instanceMatrix.needsUpdate = true;
 
     // Particules

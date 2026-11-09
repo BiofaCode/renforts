@@ -15,5 +15,5 @@ Ouvre `index.html` dans un navigateur (ordinateur ou téléphone).
 
 ## Feuille de route
 - v0.2 ✅ : secousses de caméra, textes flottants aux portes, ralenti et confettis à la victoire, marche militaire, prime du fort (multiplicateur de médailles)
-- v0.3 : améliorations au camp, types de soldats, pièges, boss, décors
+- v0.3 ✅ : améliorations au camp (Recrues, Entraînement, Butin), caisses de renfort, champs de mines, Général géant toutes les 5 opérations, décors Plaine / Désert / Neige
 - v1.0 : publication web (itch.io) puis Android / iPhone
