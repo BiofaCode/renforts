@@ -14,6 +14,6 @@ Ouvre `index.html` dans un navigateur (ordinateur ou téléphone).
 - Sauvegarde de la progression dans le navigateur (localStorage)
 
 ## Feuille de route
-- v0.2 : sensations (secousses, ralenti, effets), musique, bonus de fin
+- v0.2 ✅ : secousses de caméra, textes flottants aux portes, ralenti et confettis à la victoire, marche militaire, prime du fort (multiplicateur de médailles)
 - v0.3 : améliorations au camp, types de soldats, pièges, boss, décors
 - v1.0 : publication web (itch.io) puis Android / iPhone

@@ -132,7 +132,36 @@ body {
 .hint { font-size: 13px; color: var(--olive); font-weight: 700; }
 .result-win h2 { color: var(--ally); }
 .result-lose h2 { color: var(--enemy); }
-@media (prefers-reduced-motion: reduce) { .btn { transition: none; } }
+
+.float {
+  position: absolute; left: 0; top: 0; pointer-events: none;
+  font-family: var(--font-display); font-size: 30px; line-height: 1; white-space: nowrap;
+  -webkit-text-stroke: 1.5px var(--ink); text-shadow: 0 3px 0 var(--ink);
+  animation: floatUp .9s ease-out forwards;
+}
+.float.good { color: #9fd0ff; }
+.float.bad { color: #ffb3a8; }
+@keyframes floatUp {
+  from { opacity: 1; translate: 0 0; scale: 1.25; }
+  to { opacity: 0; translate: 0 -70px; scale: 1; }
+}
+@keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+
+.prime {
+  position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 64px); z-index: 6;
+  transform: translateX(-50%); pointer-events: none; white-space: nowrap;
+  background: var(--paper); color: var(--ink);
+  border: 3px solid var(--ink); border-radius: 14px; box-shadow: 0 5px 0 var(--ink);
+  padding: 8px 16px 10px; text-align: center;
+}
+.prime span { display: block; font-weight: 700; font-size: 12px; letter-spacing: .2em; text-transform: uppercase; color: var(--olive); }
+.prime strong { font-family: var(--font-display); font-weight: 400; font-size: 34px; font-variant-numeric: tabular-nums; }
+.prime em { font-style: normal; font-family: var(--font-display); font-size: 24px; color: var(--ally); margin-left: 8px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .btn { transition: none; }
+  .float { animation: fadeOut .9s forwards; }
+}
 </style>
 
 <div id="game" aria-label="Jeu Renforts"></div>
@@ -145,6 +174,11 @@ body {
   <button class="icon-btn" id="muteBtn" type="button">Son</button>
 </div>
 
+<div class="prime" id="prime" hidden>
+  <span>Prime du fort</span>
+  <strong>★ <b id="primeVal">0</b></strong><em id="primeMult">×1</em>
+</div>
+
 <div class="overlay" id="menu">
   <div class="logo">RENFORTS<small>Grossis ton armée</small></div>
   <div class="panel">
@@ -153,7 +187,7 @@ body {
     <p>Glisse à gauche ou à droite pour choisir tes portes. Évite les barricades.</p>
     <button class="btn" id="playBtn" type="button">Lancer l'opération</button>
     <button class="btn secondary" id="recruitBtn" type="button">
-      <span id="recruitLabel">Recruter : 1 soldat au départ</span><span id="recruitCost">★ 30</span>
+      <span id="recruitLabel">Recruter : 1 soldat au départ</span><span id="recruitCost">★ 40</span>
     </button>
     <div class="hint">★ <span id="menuMedals">0</span> médailles</div>
   </div>
@@ -269,7 +303,7 @@ body {
   }
 
   // Particules (éclats quand un soldat tombe)
-  const PART_MAX = 260;
+  const PART_MAX = 420;
   const partMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.14, 0.14, 0.14), new THREE.MeshLambertMaterial(), PART_MAX);
   partMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   partMesh.frustumCulled = false;
@@ -279,12 +313,26 @@ body {
   scene.add(partMesh);
   const parts = [];
   let partCursor = 0;
+  function addPart(p) {
+    if (parts.length < PART_MAX) parts.push(p); else { parts[partCursor] = p; partCursor = (partCursor + 1) % PART_MAX; }
+  }
   function burst(x, z, color, n) {
     for (let k = 0; k < (n || 3); k++) {
-      const p = { x, y: 0.6, z, vx: (Math.random() - 0.5) * 5, vy: 3 + Math.random() * 3, vz: (Math.random() - 0.5) * 5, life: 0.7, color };
-      if (parts.length < PART_MAX) parts.push(p); else { parts[partCursor] = p; partCursor = (partCursor + 1) % PART_MAX; }
+      addPart({ x, y: 0.6, z, vx: (Math.random() - 0.5) * 5, vy: 3 + Math.random() * 3, vz: (Math.random() - 0.5) * 5, life: 0.7, max: 0.7, g: 14, size: 1, color });
     }
   }
+  const CONFETTI = [0x2f6fe0, 0xf2b632, 0xf3ecd9, 0x9fd0ff];
+  function confetti(x, z, n) {
+    for (let k = 0; k < n; k++) {
+      const a = Math.random() * Math.PI * 2, sp = 2 + Math.random() * 6;
+      addPart({ x, y: 1.5, z, vx: Math.cos(a) * sp, vy: 7 + Math.random() * 7, vz: Math.sin(a) * sp, life: 1.8, max: 1.8, g: 9, size: 0.9, color: CONFETTI[k % CONFETTI.length] });
+    }
+  }
+
+  // Secousses de caméra et ralenti
+  const REDUCED = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  let shake = 0, timeScale = 1, slowTimer = 0;
+  function addShake(a) { if (!REDUCED) shake = Math.min(0.6, shake + a); }
 
   // ---------- Formation en tournesol ----------
   const BX = [], BZ = [];
@@ -552,8 +600,10 @@ body {
     }
   }
   function clampX(x) { return Math.max(-UNIT_CLAMP, Math.min(UNIT_CLAMP, x)); }
-  function formUpdate(g, dt) {
-    const n = g.units.length, xs = xScale(n), k = 1 - Math.exp(-9 * dt);
+  function formUpdate(g, dt, maxX) {
+    const n = g.units.length, k = 1 - Math.exp(-9 * dt);
+    let xs = xScale(n);
+    if (maxX) xs = Math.min(xs, maxX / radiusOf(n));
     for (let i = 0; i < n; i++) {
       const u = g.units[i];
       u.x += (BX[i] * xs - u.x) * k;
@@ -562,31 +612,76 @@ body {
   }
 
   // ---------- Son ----------
-  let actx = null, lastHit = 0;
-  function tone(type, f1, f2, dur, vol, delay) {
-    if (!actx || muted) return;
-    const t = actx.currentTime + (delay || 0);
+  let actx = null, master = null, sfxBus = null, musicBus = null, noiseBuf = null, lastHit = 0, lastCoin = 0;
+  function ensureAudio() {
+    try {
+      if (!actx) {
+        actx = new (window.AudioContext || window.webkitAudioContext)();
+        master = actx.createGain(); master.connect(actx.destination);
+        sfxBus = actx.createGain(); sfxBus.connect(master);
+        musicBus = actx.createGain(); musicBus.gain.value = 0.3; musicBus.connect(master);
+        noiseBuf = actx.createBuffer(1, Math.floor(actx.sampleRate * 0.3), actx.sampleRate);
+        const ch = noiseBuf.getChannelData(0);
+        for (let i = 0; i < ch.length; i++) ch[i] = Math.random() * 2 - 1;
+      }
+      if (actx.state === 'suspended') actx.resume();
+      applyMute();
+    } catch (e) { actx = null; }
+  }
+  function applyMute() { if (master) master.gain.value = muted ? 0 : 1; }
+  function tone(type, f1, f2, dur, vol, delay, bus, when) {
+    if (!actx) return;
+    const t = when != null ? when : actx.currentTime + (delay || 0);
     const o = actx.createOscillator(), g = actx.createGain();
     o.type = type;
     o.frequency.setValueAtTime(f1, t);
     o.frequency.exponentialRampToValueAtTime(f2, t + dur);
     g.gain.setValueAtTime(vol, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    o.connect(g); g.connect(actx.destination);
+    o.connect(g); g.connect(bus || sfxBus);
     o.start(t); o.stop(t + dur + 0.02);
   }
+  function noise(t, dur, vol, freq, bus) {
+    const src = actx.createBufferSource(); src.buffer = noiseBuf;
+    const f = actx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = 0.8;
+    const g = actx.createGain();
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    src.connect(f); f.connect(g); g.connect(bus || sfxBus);
+    src.start(t); src.stop(t + dur + 0.02);
+  }
   function sfx(kind) {
+    if (!actx) return;
     if (kind === 'good') tone('triangle', 520, 1040, 0.22, 0.2);
     else if (kind === 'bad') tone('sawtooth', 240, 110, 0.3, 0.1);
-    else if (kind === 'hit') { if (time - lastHit > 0.06) { lastHit = time; tone('square', 150 + Math.random() * 90, 70, 0.06, 0.05); } }
+    else if (kind === 'hit') {
+      if (time - lastHit > 0.06) { lastHit = time; noise(actx.currentTime, 0.06, 0.18, 700 + Math.random() * 500); tone('square', 150 + Math.random() * 90, 70, 0.05, 0.04); }
+    }
+    else if (kind === 'coin') { if (time - lastCoin > 0.05) { lastCoin = time; tone('square', 1300 + Math.random() * 300, 1800, 0.05, 0.035); } }
     else if (kind === 'win') [523, 659, 784, 1046].forEach((f, i) => tone('triangle', f, f * 1.01, 0.25, 0.18, i * 0.11));
     else if (kind === 'lose') [392, 311, 233].forEach((f, i) => tone('sawtooth', f, f * 0.97, 0.3, 0.09, i * 0.16));
   }
-  function ensureAudio() {
-    try {
-      if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
-      if (actx.state === 'suspended') actx.resume();
-    } catch (e) { actx = null; }
+
+  // Musique : petite marche militaire générée (caisse claire, grosse caisse, basse)
+  const BPM = 116, STEP = 60 / BPM / 4;
+  const SNARE  = [1,0,1,0, 1,1,1,0, 1,0,1,0, 1,1,1,0, 1,0,1,0, 1,1,1,0, 1,0,1,1, 1,1,1,1];
+  const ACCENT = [1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,1,0];
+  const BASS   = [45,0,0,0, 45,0,52,0, 43,0,0,0, 43,0,50,0, 41,0,0,0, 41,0,48,0, 40,0,0,0, 40,0,47,0];
+  const midi = (m) => 440 * Math.pow(2, (m - 69) / 12);
+  let musicOn = false, musicStep = 0, nextStepTime = 0;
+  function startMusic() { if (!actx || musicOn) return; musicOn = true; musicStep = 0; nextStepTime = actx.currentTime + 0.1; }
+  function stopMusic() { musicOn = false; }
+  function musicTick() {
+    if (!musicOn || !actx) return;
+    if (nextStepTime < actx.currentTime - 0.2) nextStepTime = actx.currentTime + 0.05; // onglet en arrière-plan
+    while (nextStepTime < actx.currentTime + 0.15) {
+      const i = musicStep % 32, t = nextStepTime;
+      if (SNARE[i]) noise(t, 0.09, ACCENT[i] ? 0.35 : 0.15, 1800, musicBus);
+      if (i % 8 === 0) tone('sine', 120, 45, 0.18, 0.6, 0, musicBus, t);
+      if (BASS[i]) tone('triangle', midi(BASS[i]), midi(BASS[i]) * 0.999, STEP * 1.8, 0.3, 0, musicBus, t);
+      nextStepTime += STEP;
+      musicStep++;
+    }
   }
 
   // ---------- Contrôles ----------
@@ -607,7 +702,7 @@ body {
   window.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
 
   // ---------- Interface ----------
-  function recruitCost() { return 30 + save.recruit * 25; }
+  function recruitCost() { return 40 + save.recruit * 40; }
   function updateHud() {
     $('hudLevel').textContent = save.level;
     $('hudMedals').textContent = save.medals;
@@ -627,6 +722,7 @@ body {
     $('menu').hidden = true;
     $('hud').hidden = false;
     state = 'run';
+    startMusic();
   });
   $('recruitBtn').addEventListener('click', () => {
     const c = recruitCost();
@@ -635,15 +731,17 @@ body {
     persist(); updateHud(); buildLevel();
     sfx('good');
   });
-  $('muteBtn').addEventListener('click', () => { muted = !muted; store.set('muted', muted); updateHud(); });
+  $('muteBtn').addEventListener('click', () => { muted = !muted; store.set('muted', muted); applyMute(); updateHud(); });
   $('endBtn').addEventListener('click', () => {
+    ensureAudio();
     $('end').hidden = true;
     buildLevel();
     state = 'run';
+    startMusic();
   });
   $('menuBtn').addEventListener('click', () => {
     $('end').hidden = true; $('hud').hidden = true; $('menu').hidden = false;
-    buildLevel(); state = 'menu';
+    buildLevel(); state = 'menu'; stopMusic();
   });
 
   function showEnd(win, survivors, earned) {
@@ -655,6 +753,7 @@ body {
     $('endSurvivors').textContent = survivors;
     $('endMedals').textContent = '+' + earned;
     $('endBtn').textContent = win ? 'Opération suivante' : 'Réessayer';
+    $('prime').hidden = true;
     $('end').hidden = false;
     updateHud();
   }
@@ -663,6 +762,7 @@ body {
   const v3 = new THREE.Vector3();
   const camLook = new THREE.Vector3(0, 0.5, -10);
   const camTarget = new THREE.Vector3();
+  const camBase = new THREE.Vector3(0, 9, 12);
   const mtx = new THREE.Matrix4();
   const rotPi = new THREE.Matrix4().makeRotationY(Math.PI);
   let last = performance.now();
@@ -673,6 +773,17 @@ body {
     const w = container.clientWidth || window.innerWidth, h = container.clientHeight || window.innerHeight;
     el.hidden = false;
     el.style.transform = 'translate(' + ((v3.x * 0.5 + 0.5) * w).toFixed(1) + 'px,' + ((-v3.y * 0.5 + 0.5) * h).toFixed(1) + 'px) translate(-50%,-100%)';
+  }
+
+  function floatText(text, good) {
+    if (!allyTag || allyTag.hidden) return;
+    const el = document.createElement('div');
+    el.className = 'float ' + (good ? 'good' : 'bad');
+    el.textContent = text;
+    el.style.transform = allyTag.style.transform + ' translateY(-36px)';
+    labelsEl.appendChild(el);
+    el.addEventListener('animationend', () => el.remove());
+    setTimeout(() => el.remove(), 1500);
   }
 
   function nextSquad() { for (const s of squads) if (s.alive) return s; return null; }
@@ -700,6 +811,8 @@ body {
           ally.count = applyOp(ally.count, o);
           if (ally.count < before) syncUnits(ally, CAP_ALLY, ally.cx, true);
           sfx(ally.count >= before ? 'good' : 'bad');
+          floatText(opLabel(o), ally.count >= before);
+          if (ally.count < before) addShake(0.15);
           if (allyTag) bump(allyTag);
           if (ally.count <= 0) { lose(); return; }
         }
@@ -725,6 +838,7 @@ body {
         syncUnits(ally, CAP_ALLY, ally.cx, true);
         syncUnits(s, s.cap, s.x, true);
         sfx('hit');
+        addShake(Math.min(0.1, 0.02 + k * 0.004));
       }
       // les deux armées se rapprochent
       const gap = s.d - ally.d;
@@ -763,6 +877,7 @@ body {
           ally.count = Math.max(0, ally.count - Math.max(killed, Math.round(killed * weight)));
           syncUnits(ally, CAP_ALLY, ally.cx, true);
           sfx('hit');
+          addShake(0.12);
           if (ally.count <= 0) { lose(); return; }
         }
       }
@@ -772,9 +887,36 @@ body {
 
     if (state === 'victory') {
       stateTimer += dt;
-      if (ally.d < finalD + 11) ally.d += SPEED * 0.6 * dt;
       if (fortressFlag) fortressFlag.material.color.lerp(tmpColor.set(COL.ally), Math.min(1, dt * 3));
-      if (stateTimer > 1.6) { state = 'done'; showEnd(true, ally.count, lastEarned); }
+      ally.cx += (0 - ally.cx) * Math.min(1, dt * 3);
+      if (stateTimer > 0.5) {
+        // les soldats entrent dans le fort : chacun rapporte des médailles, le multiplicateur monte
+        ally.d += SPEED * 0.55 * dt;
+        const doorZ = -(finalD + 16) + 1.2;
+        const n = ally.units.length;
+        if (n) {
+          const weight = ally.count / n;
+          let inside = 0;
+          for (let i = n - 1; i >= 0; i--) {
+            if (-ally.d + ally.units[i].z < doorZ) { ally.units.splice(i, 1); inside++; }
+          }
+          if (inside) {
+            const got = Math.min(ally.count, Math.max(inside, Math.round(inside * weight)));
+            ally.count -= got;
+            for (let j = 0; j < got; j++) { primeSoldiers++; primeValue += 0.25 * primeMult(); }
+            updatePrime();
+            sfx('coin');
+          }
+        }
+        if (ally.count <= 0 || stateTimer > 10) {
+          ally.count = 0; ally.units.length = 0;
+          lastEarned = primeBase + Math.round(primeValue);
+          save.medals += lastEarned;
+          persist();
+          state = 'done';
+          setTimeout(() => showEnd(true, primeSoldiers, lastEarned), 500);
+        }
+      }
     }
     if (state === 'defeat') {
       stateTimer += dt;
@@ -793,25 +935,43 @@ body {
       });
     }
 
-    syncUnits(ally, CAP_ALLY, ally.cx, false);
-    formUpdate(ally, dt);
+    if (state !== 'victory' && state !== 'done') syncUnits(ally, CAP_ALLY, ally.cx, false);
+    else if (state === 'victory' && ally.count > ally.units.length) {
+      // renforts qui arrivent par l'arrière pendant l'entrée au fort
+      while (ally.units.length < Math.min(ally.count, CAP_ALLY)) ally.units.push({ x: (Math.random() - 0.5) * 2, z: 4 + Math.random() * 3 });
+    }
+    formUpdate(ally, dt, state === 'victory' ? 1.6 : 0);
     for (const s of squads) if (s.alive) formUpdate(s, dt);
   }
 
   let lastEarned = 0, lastEnemyLeft = 0;
+  let primeBase = 0, primeSoldiers = 0, primeValue = 0;
+  function primeMult() { return Math.min(4, 1 + Math.floor(primeSoldiers / 50) * 0.5); }
+  function updatePrime() {
+    $('primeVal').textContent = primeBase + Math.round(primeValue);
+    $('primeMult').textContent = '×' + String(primeMult()).replace('.', ',');
+  }
   function win() {
     state = 'victory'; stateTimer = 0;
-    lastEarned = Math.round(ally.count * 0.5) + 10 + save.level * 2;
-    save.medals += lastEarned;
+    primeBase = 10 + save.level * 2;
+    primeSoldiers = 0; primeValue = 0;
     save.level += 1;
     persist();
+    timeScale = 0.3; slowTimer = 0.9;
+    confetti(0, -(finalD + 8), 160);
+    addShake(0.4);
+    stopMusic();
     sfx('win');
+    updatePrime();
+    $('prime').hidden = false;
   }
   function lose() {
     state = 'defeat'; stateTimer = 0;
     const s = battle || nextSquad();
     lastEnemyLeft = s ? s.count : 0;
     battle = null;
+    stopMusic();
+    addShake(0.3);
     sfx('lose');
   }
 
@@ -852,9 +1012,9 @@ body {
       const p = parts[i];
       p.life -= dt;
       if (p.life <= 0) { parts.splice(i, 1); continue; }
-      p.vy -= 14 * dt;
+      p.vy -= p.g * dt;
       p.x += p.vx * dt; p.y = Math.max(0.07, p.y + p.vy * dt); p.z += p.vz * dt;
-      const s = Math.max(0.01, p.life / 0.7);
+      const s = Math.max(0.01, p.life / p.max) * p.size;
       mtx.makeScale(s, s, s).setPosition(p.x, p.y, p.z);
       partMesh.setMatrixAt(pc, mtx);
       partMesh.setColorAt(pc, tmpColor.set(p.color));
@@ -866,17 +1026,25 @@ body {
     if (partMesh.instanceColor) partMesh.instanceColor.needsUpdate = true;
 
     // Caméra
-    const r = Math.min(radiusOf(n), 7);
-    camTarget.set(ally.cx * 0.45, 8 + r * 0.6, -ally.d + 11 + r * 0.8);
-    const k = 1 - Math.exp(-4 * dt);
-    camera.position.lerp(camTarget, k);
-    camLook.lerp(v3.set(ally.cx * 0.3, 0.5, -ally.d - 10), k);
+    const ending = state === 'victory' || state === 'done';
+    const cd = ending ? Math.min(ally.d, finalD + 2) : ally.d;
+    const r = ending ? 4 : Math.min(radiusOf(n), 7);
+    camTarget.set(ally.cx * 0.45, 8 + r * 0.6, -cd + 11 + r * 0.8);
+    const k = 1 - Math.exp(-4 * lastRealDt);
+    camBase.lerp(camTarget, k);
+    camLook.lerp(v3.set(ally.cx * 0.3, 0.5, -cd - 10), k);
+    camera.position.copy(camBase);
+    if (shake > 0.002) {
+      camera.position.x += (Math.random() - 0.5) * shake;
+      camera.position.y += (Math.random() - 0.5) * shake;
+      shake *= Math.exp(-7 * lastRealDt);
+    }
     camera.lookAt(camLook);
 
     // Étiquettes
     if (allyTag) {
       setTag(allyTag, ally.count);
-      if (state === 'done' && !$('end').hidden) allyTag.hidden = true;
+      if (ending) allyTag.hidden = true;
       else placeTag(allyTag, ally.cx, 2.1, -ally.d);
     }
     $('hudProgress').style.width = Math.min(100, (ally.d / finalD) * 100).toFixed(1) + '%';
@@ -884,11 +1052,14 @@ body {
     renderer.render(scene, camera);
   }
 
-  let lastDt = 0.016;
+  let lastDt = 0.016, lastRealDt = 0.016;
   function frame(now) {
-    const dt = Math.min(0.05, (now - last) / 1000);
+    const real = Math.min(0.05, (now - last) / 1000);
     last = now;
-    lastDt = dt;
+    if (slowTimer > 0) { slowTimer -= real; if (slowTimer <= 0) timeScale = 1; }
+    const dt = real * timeScale;
+    lastDt = dt; lastRealDt = real;
+    musicTick();
     if (state !== 'menu') step(dt);
     else { time += dt; syncUnits(ally, CAP_ALLY, 0, false); formUpdate(ally, dt); }
     render();
@@ -904,7 +1075,7 @@ body {
     muted = !!store.get('muted', false);
     window.claude?.hot?.snapshot?.(() => ({ save }));
     resize();
-    const go = () => { buildLevel(); camera.position.set(0, 9, 12); requestAnimationFrame((t) => { last = t; frame(t); }); };
+    const go = () => { buildLevel(); camBase.set(0, 9, 12); requestAnimationFrame((t) => { last = t; frame(t); }); };
     // on attend la police des portes (au plus 1,5 s)
     let started = false;
     const once = () => { if (!started) { started = true; go(); } };
