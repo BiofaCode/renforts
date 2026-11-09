@@ -8,6 +8,13 @@ Ouvre `index.html` dans un navigateur (ordinateur ou téléphone).
 - Glisser le doigt / la souris, ou flèches / Q-D : diriger l'armée
 - Médailles gagnées à chaque victoire : recruter des soldats au départ
 
+## Publier (itch.io, plus tard Android)
+```bash
+python3 tools/build.py
+```
+Crée `dist/renforts-web.zip` : une version autonome (Three.js inclus dans `vendor/`) à envoyer sur itch.io.
+Le texte de la page, la couverture et les captures sont dans `promo/`.
+
 ## Technique
 - Un seul fichier `index.html`, [Three.js r128](https://threejs.org/) chargé depuis cdnjs
 - Niveaux générés automatiquement (difficulté croissante)
