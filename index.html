@@ -437,6 +437,35 @@ body {
     }
   }
 
+  // Soldats tombés au sol (restent quelques secondes)
+  const CORPSE_MAX = 240;
+  const allyCorpses = new THREE.InstancedMesh(makeSoldier(COL.ally, COL.allyLegs, COL.helmA), vcMat, CORPSE_MAX);
+  const enemyCorpses = new THREE.InstancedMesh(makeSoldier(COL.enemy, COL.enemyLegs, COL.helmE), vcMat, CORPSE_MAX);
+  for (const m of [allyCorpses, enemyCorpses]) { m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.frustumCulled = false; m.count = 0; scene.add(m); }
+  let corpses = [[], []];
+  function spawnCorpse(team, x, z, flung) {
+    const list = corpses[team];
+    if (list.length >= CORPSE_MAX) list.shift();
+    list.push({ x, z, y: 0, vy: flung ? 4 + Math.random() * 4 : 0, yaw: (team ? Math.PI : 0) + (Math.random() - 0.5) * 0.9, t: 0 });
+  }
+  // Balles traçantes
+  const TR_MAX = 160;
+  const tracerMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.06, 0.06, 1), new THREE.MeshBasicMaterial({ color: 0xffe9a3 }), TR_MAX);
+  tracerMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); tracerMesh.frustumCulled = false; tracerMesh.count = 0;
+  scene.add(tracerMesh);
+  let tracers = [];
+  const trDummy = new THREE.Object3D();
+  function addTracer(x0, y0, z0, x1, y1, z1, big) {
+    if (tracers.length >= TR_MAX) tracers.shift();
+    const len = Math.hypot(x1 - x0, y1 - y0, z1 - z0);
+    tracers.push({ x0, y0, z0, x1, y1, z1, t: 0, dur: Math.max(0.08, len / 70), big: !!big });
+    addPart({ x: x0, y: y0, z: z0, vx: 0, vy: 0, vz: 0, life: 0.07, max: 0.07, g: 0, size: big ? 3 : 1.2, color: 0xfff1b0 });
+  }
+  function fireball(x, z, size) {
+    const k = size || 1;
+    for (let j = 0; j < 26 * k; j++) addPart({ x, y: 0.3, z, vx: (Math.random() - 0.5) * 7 * k, vy: 4 + Math.random() * 7, vz: (Math.random() - 0.5) * 7 * k, life: 0.9, max: 0.9, g: 13, size: 1.5, color: [0xff8a3d, 0xffd166, 0x55584d][j % 3] });
+  }
+
   // Secousses de caméra et ralenti
   const REDUCED = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   let shake = 0, timeScale = 1, slowTimer = 0;
@@ -557,7 +586,7 @@ body {
     const rnd = mulberry32(lv * 7919 + 17);
     const ri = (a, b) => a + Math.floor(rnd() * (b - a + 1));
     const rows = [];
-    let E = startCount, d = 38, prev = '';
+    let E = startCount, d = 38, prev = '', tankPlaced = false;
     const n = 7 + Math.min(lv, 9);
     const good = () => {
       if (E < 200 && rnd() < 0.35) return { op: 'x', v: (E < 40 && rnd() < 0.25) ? 3 : 2 };
@@ -575,10 +604,12 @@ body {
       if (i >= 2 && prev !== 'enemy' && r < 0.28) t = 'enemy';
       else if (lv >= 2 && i >= 1 && prev !== 'obstacle' && prev !== 'mines' && r > 0.8) t = (lv >= 3 && rnd() < 0.5) ? 'mines' : 'obstacle';
       else if (lv >= 2 && i >= 1 && prev !== 'crate' && r > 0.68) t = 'crate';
+      else if (lv >= 2 && i >= 1 && prev !== 'nest' && r > 0.58) t = 'nest';
+      if (lv >= 3 && !tankPlaced && i >= 2 && i < n - 2 && t !== 'enemy' && rnd() < 0.22) { t = 'tank'; tankPlaced = true; }
       if (t === 'gate') {
         const a = good(), b = rnd() < 0.25 ? good() : bad();
         const opts = rnd() < 0.5 ? [a, b] : [b, a];
-        rows.push({ type: 'gate', d, opts });
+        rows.push({ type: 'gate', d, opts, move: lv >= 3 && rnd() < 0.3, phase: rnd() * 6.28 });
         const ea = applyOp(E, opts[0]), eb = applyOp(E, opts[1]);
         E = Math.max(1, Math.round(Math.max(ea, eb) * 0.85 + Math.min(ea, eb) * 0.15));
       } else if (t === 'enemy') {
@@ -591,6 +622,12 @@ body {
         for (let j = 0; j < nm; j++) mines.push({ x: (rnd() * 2 - 1) * (HALF - 0.8), dz: (rnd() * 2 - 1) * 4 });
         rows.push({ type: 'mines', d, mines });
         E = Math.max(1, Math.round(E * 0.88));
+      } else if (t === 'nest') {
+        rows.push({ type: 'nest', d, side: rnd() < 0.5 ? -1 : 1 });
+        E = Math.max(1, Math.round(E * 0.9));
+      } else if (t === 'tank') {
+        rows.push({ type: 'tank', d, x: [-3.4, 0, 3.4][ri(0, 2)] });
+        E += 10;
       } else if (t === 'crate') {
         const v = Math.max(5, Math.round(E * (0.25 + rnd() * 0.2)));
         rows.push({ type: 'crate', d, x: [-3.6, 0, 3.6][ri(0, 2)], v });
@@ -613,6 +650,36 @@ body {
   let levelGroup = null;
   let gates = [], obstacles = [], squads = [], mines = [], crates = [];
   let bossMesh = null, bossFall = 0, battleAccE = 0;
+  let nests = [], tankPickup = null, shells = [], bossFireT = 2, ambAcc = 0, tankTag = null;
+  let shellGeo = null, shellMat = null, ringGeo = null, ringMat = null;
+  function unitPos(g, u) { return [clampX((g === ally ? ally.cx : g.x) + u.x), -g.d + u.z]; }
+  function tankZ() { return -ally.d - radiusOf(ally.units.length) - 1.8; }
+  function makeTank() {
+    const grp = new THREE.Group();
+    const hullMat = new THREE.MeshLambertMaterial({ color: 0x4d5d34, flatShading: true });
+    const dark = new THREE.MeshLambertMaterial({ color: 0x2a2d24 });
+    const hull = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.7, 2.8), hullMat); hull.position.y = 0.65; grp.add(hull);
+    for (const sx of [-1, 1]) { const tr = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.6, 3.0), dark); tr.position.set(sx * 1.05, 0.32, 0); grp.add(tr); }
+    const turret = new THREE.Group(); turret.position.set(0, 1.15, 0.2); grp.add(turret);
+    const top = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.5, 1.3), hullMat); turret.add(top);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 1.8, 8), dark); barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.05, -1.4); turret.add(barrel);
+    const band = new THREE.Mesh(new THREE.BoxGeometry(1.92, 0.16, 0.5), new THREE.MeshLambertMaterial({ color: COL.ally })); band.position.set(0, 0.95, -0.6); grp.add(band);
+    return { group: grp, turret };
+  }
+  function explodeAt(x, z, rad, size) {
+    fireball(x, z, size);
+    addShake(0.3);
+    sfx('boom');
+    const n = ally.units.length;
+    if (!n || state === 'victory' || state === 'done' || state === 'defeat') return;
+    const weight = ally.count / n;
+    let killed = 0;
+    for (let i = n - 1; i >= 0; i--) {
+      const [wx, wz] = unitPos(ally, ally.units[i]);
+      if ((wx - x) * (wx - x) + (wz - z) * (wz - z) < rad * rad) { ally.units.splice(i, 1); spawnCorpse(0, wx, wz, true); killed++; }
+    }
+    if (killed) ally.count = Math.max(0, ally.count - Math.max(killed, Math.round(killed * weight)));
+  }
   function power() { return 1 + 0.15 * (save.training || 0); }
   let finalD = 300, fortressFlag = null;
   const ally = { count: 1, cx: 0, d: 0, units: [] };
@@ -750,6 +817,14 @@ body {
 
     // Lignes de jeu
     gates = []; obstacles = []; squads = []; mines = []; crates = [];
+    nests = []; tankPickup = null; shells = []; bossFireT = 2.5; ambAcc = 0;
+    corpses = [[], []]; tracers = [];
+    if (ally.tank) ally.tank = null;
+    const nestGunnerGeo = makeSoldier(COL.enemy, COL.enemyLegs, COL.helmE);
+    shellGeo = new THREE.SphereGeometry(0.4, 10, 8);
+    shellMat = new THREE.MeshLambertMaterial({ color: 0x2b2b2b });
+    ringGeo = new THREE.RingGeometry(1.75, 2.15, 36).rotateX(-Math.PI / 2);
+    ringMat = new THREE.MeshBasicMaterial({ color: 0xff3b2f, transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide });
     const mineGeo = new THREE.CylinderGeometry(0.42, 0.48, 0.16, 12);
     const mineMat = new THREE.MeshLambertMaterial({ color: 0x3d4430 });
     const ledGeo = new THREE.SphereGeometry(0.09, 8, 6);
@@ -761,7 +836,7 @@ body {
     for (const row of L.rows) {
       const z = -row.d;
       if (row.type === 'gate') {
-        const g = { d: row.d, opts: row.opts, passed: false, chosen: -1, fade: 0, halves: [] };
+        const g = { d: row.d, opts: row.opts, passed: false, chosen: -1, fade: 0, halves: [], move: row.move, phase: row.phase, off: 0 };
         row.opts.forEach((o, idx) => {
           const half = new THREE.Group();
           const xc = idx === 0 ? -HALF / 2 : HALF / 2;
@@ -792,6 +867,24 @@ body {
         obstacles.push({ d: row.d, w: row.w, c0: row.c0, move: row.move, phase: row.phase, group: grp, cx: row.c0 });
       } else if (row.type === 'enemy') {
         squads.push({ d: row.d, x: row.x, count: row.count, units: [], alive: true, cap: CAP_SQUAD, tag: makeTag('enemy'), final: false });
+      } else if (row.type === 'nest') {
+        const grp = new THREE.Group();
+        const bagsRing = new THREE.Mesh(new THREE.TorusGeometry(1.15, 0.38, 6, 12), new THREE.MeshLambertMaterial({ color: B.bags, flatShading: true }));
+        bagsRing.rotation.x = -Math.PI / 2; bagsRing.position.y = 0.3; grp.add(bagsRing);
+        const gun = new THREE.Group(); gun.position.y = 1.0; grp.add(gun);
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.24, 0.6), postMat); gun.add(body);
+        const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 1.5, 6), postMat); barrel.rotation.x = Math.PI / 2; barrel.position.z = 0.9; gun.add(barrel);
+        const gunner = new THREE.Mesh(nestGunnerGeo, vcMat); gunner.position.set(row.side * 0.55, 0, 0); gunner.rotation.y = row.side * Math.PI / 2; grp.add(gunner);
+        const nx = row.side * (HALF + 2.1);
+        grp.position.set(nx, 0, -row.d);
+        levelGroup.add(grp);
+        nests.push({ d: row.d, x: nx, group: grp, gun, gunner, fireT: 0.4, interval: Math.max(0.08, 0.24 - save.level * 0.012) });
+      } else if (row.type === 'tank') {
+        const t = makeTank();
+        t.group.position.set(row.x, 0, -row.d);
+        t.group.rotation.y = 0.5;
+        levelGroup.add(t.group);
+        tankPickup = { d: row.d, x: row.x, group: t.group, turret: t.turret, taken: false, tag: makeTag('bonus') };
       } else if (row.type === 'mines') {
         for (const mi of row.mines) {
           const grp = new THREE.Group();
@@ -842,6 +935,7 @@ body {
     syncUnits(ally, CAP_ALLY, 0, false);
     for (const s of squads) syncUnits(s, s.cap, 0, false);
     allyTag = makeTag('ally');
+    tankTag = makeTag('bonus');
     battle = null;
     updateHud();
   }
@@ -851,7 +945,16 @@ body {
     while (g.units.length < want) g.units.push({ x: (Math.random() - 0.5) * 0.4, z: (Math.random() - 0.5) * 0.4, y: g.dropY ? 2.5 + Math.random() * 2.5 : 0 });
     while (g.units.length > want) {
       const u = g.units.pop();
-      if (fx) burst(clampX(xc + u.x), -g.d + u.z, g === ally ? COL.ally : COL.enemy, 3);
+      const px = clampX(xc + u.x), pz = -g.d + u.z;
+      if (fx === 'kill') {
+        // tombé au combat : un corps au sol et une balle tirée depuis l'autre armée
+        spawnCorpse(g === ally ? 0 : 1, px, pz);
+        const other = g === ally ? battle : ally;
+        if (other && other.units && other.units.length) {
+          const [sx, sz] = unitPos(other, other.units[Math.floor(Math.random() * other.units.length)]);
+          addTracer(sx, 0.62, sz, px, 0.55, pz);
+        }
+      } else if (fx) burst(px, pz, g === ally ? COL.ally : COL.enemy, 3);
     }
   }
   function clampX(x) { return Math.max(-UNIT_CLAMP, Math.min(UNIT_CLAMP, x)); }
@@ -868,7 +971,7 @@ body {
   }
 
   // ---------- Son ----------
-  let actx = null, master = null, sfxBus = null, musicBus = null, noiseBuf = null, lastHit = 0, lastCoin = 0;
+  let actx = null, master = null, sfxBus = null, musicBus = null, noiseBuf = null, lastHit = 0, lastCoin = 0, lastShot = 0;
   function ensureAudio() {
     try {
       if (!actx) {
@@ -914,6 +1017,8 @@ body {
       if (time - lastHit > 0.06) { lastHit = time; noise(actx.currentTime, 0.06, 0.18, 700 + Math.random() * 500); tone('square', 150 + Math.random() * 90, 70, 0.05, 0.04); }
     }
     else if (kind === 'coin') { if (time - lastCoin > 0.05) { lastCoin = time; tone('square', 1300 + Math.random() * 300, 1800, 0.05, 0.035); } }
+    else if (kind === 'shot') { if (time - lastShot > 0.035) { lastShot = time; noise(actx.currentTime, 0.035, 0.06, 2600 + Math.random() * 1500); } }
+    else if (kind === 'cannon') { noise(actx.currentTime, 0.3, 0.5, 400); tone('sine', 160, 50, 0.25, 0.35); }
     else if (kind === 'boom') { noise(actx.currentTime, 0.5, 0.7, 160); tone('sine', 110, 30, 0.45, 0.5); }
     else if (kind === 'win') [523, 659, 784, 1046].forEach((f, i) => tone('triangle', f, f * 1.01, 0.25, 0.18, i * 0.11));
     else if (kind === 'lose') [392, 311, 233].forEach((f, i) => tone('sawtooth', f, f * 0.97, 0.3, 0.09, i * 0.16));
@@ -1110,7 +1215,7 @@ body {
       for (const g of gates) {
         if (!g.passed && ally.d >= g.d) {
           g.passed = true;
-          g.chosen = ally.cx < 0 ? 0 : 1;
+          g.chosen = ally.cx < g.off ? 0 : 1;
           const o = g.opts[g.chosen];
           const before = ally.count;
           ally.count = applyOp(ally.count, o);
@@ -1128,7 +1233,10 @@ body {
       if (crates.some((c) => !c.taken && ahead(c.d))) hintOnce('crate', 'Passe sur la caisse : des renforts tombent du ciel !');
       else if (mines.some((m) => !m.done && ahead(-m.z))) hintOnce('mines', 'Champ de mines : évite les lumières rouges');
       else if (obstacles.some((o) => ahead(o.d))) hintOnce('barricade', 'Barricade : contourne-la ou tu perds des soldats');
-      else if (bossMesh && finalD - ally.d < 70) hintOnce('boss', 'Un Général garde le fort. Arrive en force !');
+      else if (bossMesh && finalD - ally.d < 75) hintOnce('boss2', 'Le Général bombarde ! Esquive les cercles rouges');
+      else if (nests.some((x) => ahead(x.d))) hintOnce('nest', 'Mitrailleuse ! Passe loin d\'elle pour perdre moins de soldats');
+      else if (tankPickup && !tankPickup.taken && ahead(tankPickup.d)) hintOnce('tank', 'Un blindé ! Passe dessus pour qu\'il rejoigne ton armée');
+      else if (gates.some((g) => g.move && !g.passed && ahead(g.d))) hintOnce('movegate', 'Ces portes bougent : vise au bon moment');
       else { const sq = nextSquad(); if (sq && !sq.final && ahead(sq.d)) hintOnce('squad', 'Escouade ennemie : chaque soldat en élimine un'); }
 
       // Caisses de renfort
@@ -1143,6 +1251,20 @@ body {
           c.group.visible = false; c.tag.hidden = true;
           for (let j = 0; j < 14; j++) addPart({ x: c.x, y: 0.8, z: -c.d, vx: (Math.random() - 0.5) * 6, vy: 3 + Math.random() * 4, vz: (Math.random() - 0.5) * 6, life: 0.8, max: 0.8, g: 12, size: 1.2, color: j % 2 ? 0x9a6b3c : 0xf2b632 });
           floatText('+' + c.v, true);
+          sfx('good');
+          if (allyTag) bump(allyTag);
+        }
+      }
+
+      // Blindé à récupérer
+      if (tankPickup && !tankPickup.taken && ally.d >= tankPickup.d) {
+        tankPickup.taken = true;
+        tankPickup.tag.hidden = true;
+        if (Math.abs(ally.cx - tankPickup.x) < 2.8) {
+          const hp = 30 + save.level * 3;
+          ally.tank = { hp, max: hp, group: tankPickup.group, turret: tankPickup.turret, fireT: 0.6 };
+          tankPickup.group.rotation.y = 0;
+          floatText('Blindé !', true);
           sfx('good');
           if (allyTag) bump(allyTag);
         }
@@ -1165,12 +1287,14 @@ body {
       battleAcc -= ka; battleAccE -= ke;
       ke = Math.min(ke, s.count);
       ka = Math.min(ka, ally.count);
+      // le blindé encaisse la moitié des pertes
+      if (ally.tank && ka > 1) { const ab = Math.min(Math.floor(ka / 2), ally.tank.hp); ally.tank.hp -= ab; ka -= ab; }
       if (s.count - ke <= 0) ka = Math.min(ka, Math.ceil(ke / power())); // les derniers ennemis ne valent pas plus qu'eux-mêmes
       const k = Math.max(ka, ke);
       if (k > 0) {
         ally.count -= ka; s.count -= ke;
-        syncUnits(ally, CAP_ALLY, ally.cx, true);
-        syncUnits(s, s.cap, s.x, true);
+        syncUnits(ally, CAP_ALLY, ally.cx, 'kill');
+        syncUnits(s, s.cap, s.x, 'kill');
         sfx('hit');
         addShake(Math.min(0.1, 0.02 + k * 0.004));
       }
@@ -1186,13 +1310,117 @@ body {
       }
     }
 
-    // Barricades : chaque soldat qui la touche tombe
+    if (running) {
+      // Fusillade : les deux armées échangent des tirs à l'approche et pendant le combat
+      const sq = nextSquad();
+      if (sq && ally.units.length && sq.units.length && (state === 'battle' || sq.d - ally.d < 20)) {
+        ambAcc += Math.min(28, (ally.units.length + sq.units.length) * 0.25) * dt;
+        while (ambAcc >= 1) {
+          ambAcc -= 1;
+          const fromAlly = Math.random() < 0.5;
+          const A = fromAlly ? ally : sq, Bg = fromAlly ? sq : ally;
+          const [ax, az] = unitPos(A, A.units[Math.floor(Math.random() * A.units.length)]);
+          const [bx, bz] = unitPos(Bg, Bg.units[Math.floor(Math.random() * Bg.units.length)]);
+          addTracer(ax, 0.62, az, bx + (Math.random() - 0.5), 0.5, bz);
+          sfx('shot');
+        }
+      }
+
+      // Blindé : suit l'armée, tire des obus, s'écroule s'il n'a plus de blindage
+      if (ally.tank) {
+        const T = ally.tank;
+        if (sq && (state === 'battle' || sq.d - ally.d < 26) && sq.count > 0) {
+          T.fireT -= dt;
+          if (T.fireT <= 0) {
+            T.fireT = 0.9;
+            const k = Math.min(sq.count, 3 + Math.floor(save.level / 2));
+            sq.count -= k;
+            addTracer(ally.cx, 1.2, tankZ() - 1.5, sq.x, 0.6, -sq.d, true);
+            syncUnits(sq, sq.cap, sq.x, 'kill');
+            fireball(sq.x, -sq.d + 1, 0.7);
+            sfx('cannon');
+            addShake(0.12);
+            if (sq.count <= 0 && state === 'battle') { sq.alive = false; sq.tag.hidden = true; battle = null; if (sq.final) { win(); } else state = 'run'; }
+            else if (sq.count <= 0) { sq.alive = false; sq.tag.hidden = true; if (sq.final) win(); }
+          }
+        }
+        if (T.hp <= 0) {
+          fireball(ally.cx, tankZ(), 1.4); sfx('boom'); addShake(0.35);
+          T.group.visible = false; ally.tank = null; tankTag.hidden = true;
+          floatText('Blindé détruit', false);
+        }
+      }
+
+      // Mitrailleuses au bord de la route : plus tu passes loin, moins elles touchent
+      for (const ns of nests) {
+        const ahd = ns.d - ally.d;
+        if (ahd > 36 || ahd < -3 || !ally.units.length) continue;
+        ns.fireT -= dt;
+        ns.gun.lookAt(ally.cx, 0.8, -ally.d);
+        while (ns.fireT <= 0 && ally.units.length) {
+          ns.fireT += ns.interval;
+          const i = Math.floor(Math.random() * ally.units.length);
+          const [tx, tz] = unitPos(ally, ally.units[i]);
+          addTracer(ns.x, 1.05, -ns.d, tx, 0.6, tz);
+          sfx('shot');
+          const pHit = Math.max(0.2, Math.min(1, 1.25 - Math.abs(ally.cx - ns.x) / 8));
+          if (ally.tank && Math.random() < 0.3) { ally.tank.hp -= 1; continue; }
+          if (Math.random() < pHit) {
+            const weight = ally.count / ally.units.length;
+            ally.units.splice(i, 1);
+            spawnCorpse(0, tx, tz);
+            ally.count = Math.max(0, ally.count - Math.max(1, Math.round(weight)));
+          }
+        }
+        if (ally.count <= 0) { lose(); return; }
+      }
+
+      // Le Général bombarde : un cercle rouge annonce où tombe l'obus
+      const fsq = squads[squads.length - 1];
+      if (bossMesh && fsq && fsq.alive && finalD - ally.d < 70) {
+        bossFireT -= dt;
+        if (bossFireT <= 0) {
+          bossFireT = Math.max(1.0, 2.1 - save.level * 0.04);
+          const dur = 1.15;
+          const tx = clampX(ally.cx + (Math.random() - 0.5) * 2.5);
+          const tz = -(ally.d + (state === 'battle' ? 0 : SPEED * dur * 0.8)) - (Math.random() - 0.3) * 2;
+          const mesh = new THREE.Mesh(shellGeo, shellMat);
+          const ring = new THREE.Mesh(ringGeo, ringMat);
+          ring.position.set(tx, 0.05, tz);
+          levelGroup.add(mesh); levelGroup.add(ring);
+          shells.push({ x0: clampX(fsq.x), y0: 6, z0: -fsq.d - 1, x1: tx, z1: tz, t: 0, dur, mesh, ring });
+          sfx('cannon');
+        }
+      }
+    }
+    for (let i = shells.length - 1; i >= 0; i--) {
+      const sh = shells[i];
+      sh.t += dt;
+      const f = Math.min(1, sh.t / sh.dur);
+      sh.mesh.position.set(sh.x0 + (sh.x1 - sh.x0) * f, sh.y0 * (1 - f) + 9 * 4 * f * (1 - f), sh.z0 + (sh.z1 - sh.z0) * f);
+      sh.ring.scale.setScalar(1 + 0.15 * Math.sin(time * 20));
+      if (f >= 1) {
+        levelGroup.remove(sh.mesh); levelGroup.remove(sh.ring);
+        shells.splice(i, 1);
+        explodeAt(sh.x1, sh.z1, 2.0, 1.2);
+        if (running && ally.count <= 0) { lose(); return; }
+      }
+    }
+
+    // Barricades : chaque soldat qui la touche tombe (le blindé, lui, les écrase)
     if (running) {
       for (const ob of obstacles) {
+        if (ob.dead) continue;
         ob.cx = ob.move ? Math.sin(time * 1.3 + ob.phase) * (HALF - ob.w / 2) : ob.c0;
         ob.group.position.x = ob.cx;
         const oz = -ob.d;
         if (Math.abs(oz + ally.d) > 14) continue;
+        if (ally.tank && Math.abs(tankZ() - oz) < 1.6 && Math.abs(ally.cx - ob.cx) < ob.w / 2 + 1.2) {
+          ob.dead = true; ob.group.visible = false;
+          fireball(ob.cx, oz, 0.8); sfx('boom'); addShake(0.2);
+          floatText('Écrasée !', true);
+          continue;
+        }
         const xa = ob.cx - ob.w / 2 - 0.15, xb = ob.cx + ob.w / 2 + 0.15;
         const n = ally.units.length;
         if (!n) continue;
@@ -1203,7 +1431,8 @@ body {
           const wx = clampX(ally.cx + u.x), wz = -ally.d + u.z;
           if (Math.abs(wz - oz) < 0.35 && wx > xa && wx < xb) {
             ally.units.splice(i, 1);
-            burst(wx, wz, COL.ally, 3);
+            burst(wx, wz, COL.ally, 2);
+            spawnCorpse(0, wx, wz);
             killed++;
           }
         }
@@ -1225,18 +1454,7 @@ body {
         }
         if (!hit) continue;
         m.done = true; m.group.visible = false;
-        const n = ally.units.length, weight = ally.count / n;
-        let killed = 0;
-        for (let i = n - 1; i >= 0; i--) {
-          const u = ally.units[i];
-          const wx = clampX(ally.cx + u.x), wz = -ally.d + u.z;
-          if ((wx - m.x) * (wx - m.x) + (wz - m.z) * (wz - m.z) < 2.9) { ally.units.splice(i, 1); burst(wx, wz, COL.ally, 2); killed++; }
-        }
-        for (let j = 0; j < 26; j++) addPart({ x: m.x, y: 0.3, z: m.z, vx: (Math.random() - 0.5) * 7, vy: 4 + Math.random() * 7, vz: (Math.random() - 0.5) * 7, life: 0.9, max: 0.9, g: 13, size: 1.5, color: [0xff8a3d, 0xffd166, 0x55584d][j % 3] });
-        addShake(0.3);
-        sfx('boom');
-        ally.count = Math.max(0, ally.count - Math.max(killed, Math.round(killed * weight)));
-        syncUnits(ally, CAP_ALLY, ally.cx, true);
+        explodeAt(m.x, m.z, 1.7);
         if (ally.count <= 0) { lose(); return; }
       }
     } else {
@@ -1282,6 +1500,8 @@ body {
     }
 
     for (const m of mines) if (!m.done) m.led.visible = Math.sin(time * 9 + m.phase) > 0;
+
+    for (const g of gates) if (g.move && !g.passed) { g.off = Math.sin(time * 1.4 + g.phase) * 2.2; for (const h of g.halves) h.group.position.x = g.off; }
 
     // Animation des portes franchies
     for (const g of gates) {
@@ -1393,7 +1613,56 @@ body {
       const fs = squads[squads.length - 1];
       if (fs.alive) bossMesh.position.set(clampX(fs.x), Math.abs(Math.sin(time * 3)) * 0.15, -fs.d - 1.5);
       else if (bossFall < 1) { bossFall = Math.min(1, bossFall + lastDt * 1.6); bossMesh.rotation.x = -bossFall * Math.PI / 2; bossMesh.position.y = 0; }
+      if (!fs.alive && ally.d > fs.d + 2) bossMesh.visible = false;
     }
+    // Blindé
+    if (ally.tank) {
+      const T = ally.tank, tz = tankZ();
+      T.group.position.set(ally.cx, Math.abs(Math.sin(time * 14)) * 0.04, tz);
+      setTag(tankTag, 'Blindé · ' + Math.max(0, T.hp));
+      placeTag(tankTag, ally.cx, 2.6, tz);
+    } else if (tankTag) tankTag.hidden = true;
+    if (tankPickup && !tankPickup.taken) {
+      if (tankPickup.d - ally.d < 120) { setTag(tankPickup.tag, 'Blindé'); placeTag(tankPickup.tag, tankPickup.x, 2.8, -tankPickup.d); }
+      else tankPickup.tag.hidden = true;
+    }
+
+    // Soldats tombés
+    const cms = [allyCorpses, enemyCorpses];
+    const rearZ = -ally.d + radiusOf(ally.units.length) + 1; // une fois l'armée passée, les corps disparaissent
+    for (let team = 0; team < 2; team++) {
+      const list = corpses[team];
+      let c = 0;
+      for (let i = list.length - 1; i >= 0; i--) {
+        const cp = list[i];
+        cp.t += lastDt;
+        if (cp.t > 3.2 || cp.z > rearZ) { list.splice(i, 1); continue; }
+        if (cp.vy || cp.y > 0) { cp.y = Math.max(0, cp.y + cp.vy * lastDt); cp.vy -= 18 * lastDt; if (cp.y === 0) cp.vy = 0; }
+        const a = Math.min(1, cp.t * 5) * Math.PI * 0.47;
+        const sink = cp.t > 2.3 ? (cp.t - 2.3) * 0.7 : 0;
+        mtx.makeRotationY(cp.yaw).multiply(legRot.makeRotationX(a)).setPosition(cp.x, cp.y + 0.08 - sink, cp.z);
+        cms[team].setMatrixAt(c++, mtx);
+      }
+      cms[team].count = c;
+      cms[team].instanceMatrix.needsUpdate = true;
+    }
+
+    // Balles traçantes
+    let tc = 0;
+    for (let i = tracers.length - 1; i >= 0; i--) {
+      const tr = tracers[i];
+      tr.t += lastDt;
+      if (tr.t >= tr.dur) { tracers.splice(i, 1); continue; }
+      const f = tr.t / tr.dur;
+      trDummy.position.set(tr.x0 + (tr.x1 - tr.x0) * f, tr.y0 + (tr.y1 - tr.y0) * f, tr.z0 + (tr.z1 - tr.z0) * f);
+      trDummy.lookAt(tr.x1, tr.y1, tr.z1);
+      trDummy.scale.set(tr.big ? 3 : 1, tr.big ? 3 : 1, tr.big ? 1.6 : 1.3);
+      trDummy.updateMatrix();
+      tracerMesh.setMatrixAt(tc++, trDummy.matrix);
+    }
+    tracerMesh.count = tc;
+    tracerMesh.instanceMatrix.needsUpdate = true;
+
     for (const c of crates) {
       if (c.taken || c.d - ally.d > 120) { c.tag.hidden = true; continue; }
       c.group.rotation.y = time * 1.2;
@@ -1430,7 +1699,8 @@ body {
     const ending = state === 'victory' || state === 'done';
     const cd = ending ? Math.min(ally.d, finalD + 2) : ally.d;
     const r = ending ? 4 : Math.min(radiusOf(n), 7);
-    camTarget.set(ally.cx * 0.45, 8 + r * 0.6, -cd + 11 + r * 0.8);
+    const zoom = state === 'battle' ? 0.8 : 1;
+    camTarget.set(ally.cx * 0.45, (8 + r * 0.6) * zoom, -cd + (11 + r * 0.8) * zoom);
     const k = 1 - Math.exp(-4 * lastRealDt);
     camBase.lerp(camTarget, k);
     camLook.lerp(v3.set(ally.cx * 0.3, 0.5, -cd - 10), k);
@@ -1447,7 +1717,7 @@ body {
     // Étiquettes
     if (allyTag) {
       setTag(allyTag, ally.count);
-      if (ending) allyTag.hidden = true;
+      if (ending) { allyTag.hidden = true; if (tankTag) tankTag.hidden = true; }
       else placeTag(allyTag, ally.cx, 2.1, -ally.d);
     }
     $('hudProgress').style.width = Math.min(100, (ally.d / finalD) * 100).toFixed(1) + '%';
