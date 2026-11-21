@@ -3404,8 +3404,14 @@ body {
       const src = ud.baseColor, dst = ca.array;
       for (let i = 0; i < src.length; i += 3) {
         let r = src[i], g = src[i + 1], b = src[i + 2];
+        // les couleurs d'origine ont été assombries (ombrage du bas, bords) : on cherche une teinte
+        // proportionnelle (couleur × k) et on applique le même facteur k au camouflage
         for (const [from, to] of map) {
-          if (Math.abs(r - from.r) < 0.02 && Math.abs(g - from.g) < 0.02 && Math.abs(b - from.b) < 0.02) { r = to.r; g = to.g; b = to.b; break; }
+          const k = (r * from.r + g * from.g + b * from.b) / (from.r * from.r + from.g * from.g + from.b * from.b);
+          if (k < 0.35 || k > 1.4) continue;
+          if (Math.abs(r - from.r * k) < 0.025 && Math.abs(g - from.g * k) < 0.025 && Math.abs(b - from.b * k) < 0.025) {
+            r = Math.min(1, to.r * k); g = Math.min(1, to.g * k); b = Math.min(1, to.b * k); break;
+          }
         }
         dst[i] = r; dst[i + 1] = g; dst[i + 2] = b;
       }

@@ -23,6 +23,10 @@ Réglages → Sauvegarde → Three.js (scène, ciel, montagnes) → soldats (Ins
 - Respecter `prefers-reduced-motion` (secousses, animations).
 - Commentaires de code en français, courts.
 
+## Budget de performance
+
+Qualité haute, scène chargée (armée de 100 à 250) : environ 60 000 triangles et 100 appels de dessin au plus. Mesurer avec `window.__renfortsPerf()` (triangles, appels, objets les plus lourds). Les soldats ont 3 niveaux de détail (détaillé / simplifié / lointain) et le décor fixe est fusionné par tronçons : garder ces mécanismes pour tout nouvel élément répété. La qualité basse est choisie automatiquement sous 40 images/s.
+
 ## Tester
 
 ```bash

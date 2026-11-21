@@ -28,5 +28,6 @@ Le texte de la page, la couverture et les captures sont dans `promo/`.
 - v0.4 ✅ : tutoriel (indices la première fois que chaque élément apparaît), pause (bouton, Échap/P, pause automatique quand on quitte l'appli)
 - v0.5 ✅ : graphismes (soldats qui courent, ombres, ciel en dégradé, montagnes, textures du sol et de la route, rochers, sacs de sable, camp de départ)
 - v0.6 ✅ : combats spectaculaires (balles traçantes, soldats qui tombent, caméra rapprochée), mitrailleuses, blindé allié, portes mobiles, bombardements du Général
+- v0.7 ✅ : menu à onglets (Camp, Missions, Arsenal, Options), missions du jour et succès, ravitaillement quotidien, coffres, 6 camouflages, écran de fin avec étoiles ; combos, PARFAIT, paliers, médailles qui volent, vibrations, musique avec mélodie ; soldats détaillés, Général, explosions, décors riches par biome, portes et fort retravaillés ; bifurcations, rangées de 3 portes, portes renforcées, blindé ennemi, nouvelle courbe de difficulté ; niveaux de détail et qualité automatique
 - ✅ Publié sur itch.io : https://sayeng.itch.io/renforts
 - Prochaines étapes : retours des testeurs, version Android, puis iPhone
