@@ -754,7 +754,11 @@ body {
       for (let k = 0; k < n; k++) {
         const s = w * (0.55 + r() * 0.5), o = (k - (n - 1) / 2) * w * 0.75;
         const low = k % 2 === 0;
-        parts.push({ geo: new THREE.IcosahedronGeometry(1, 1).scale(s, s * (low ? 0.3 : 0.45), s * 0.6).translate(Math.cos(a) * dist + tx * o, y + (low ? -s * 0.12 : s * 0.12), Math.sin(a) * dist + tz * o), color: low ? 0xeadfd6 : 0xfffaf2 });
+        // bouffée = disque plat tourné vers la caméra (couleur unie : même silhouette qu'une sphère, 7 fois moins de triangles)
+        const rd = dist - (low ? 0 : 1.5) - k * 0.2;
+        const disc = new THREE.CircleGeometry(1, 12).scale(s, s * (low ? 0.3 : 0.45), 1);
+        disc.lookAt(new THREE.Vector3(-Math.cos(a), 0, -Math.sin(a)));
+        parts.push({ geo: disc.translate(Math.cos(a) * rd + tx * o, y + (low ? -s * 0.12 : s * 0.12), Math.sin(a) * rd + tz * o), color: low ? 0xeadfd6 : 0xfffaf2 });
       }
     }
     mountains.add(new THREE.Mesh(mergeParts(parts), cloudMat));
@@ -765,11 +769,18 @@ body {
   const fillLight = new THREE.DirectionalLight(0x9fb6ff, 0.22);
   fillLight.position.set(9, 5, -8);
   scene.add(fillLight);
+  // Brouillard : un peu plus proche en qualité basse (moins d'objets à dessiner au loin)
+  let fogBase = [50, 165];
+  function applyFog() {
+    const k = save.opts && !save.opts.hq ? 0.8 : 1;
+    scene.fog.near = fogBase[0] * k; scene.fog.far = fogBase[1] * k;
+  }
   // Ambiance d'un décor : ciel, brouillard, lumières, horizon
   function applyBiomeLook(B) {
     scene.background.set(B.sky);
     scene.fog.color.set(B.sky);
-    scene.fog.near = B.fogN || 50; scene.fog.far = B.fogF || 165;
+    fogBase = [B.fogN || 50, B.fogF || 165];
+    applyFog();
     paintSky(B.top, B.sky, B.glow);
     hemi.color.set(B.hemiS); hemi.groundColor.set(B.hemiG); hemi.intensity = B.hemiI;
     sun.color.set(B.sun); sun.intensity = B.sunI;
@@ -794,10 +805,18 @@ body {
       const g = p.geo.index ? p.geo.toNonIndexed() : p.geo;
       const c = new THREE.Color(p.color);
       const pa = g.attributes.position.array, na = g.attributes.normal.array;
-      for (let i = 0; i < pa.length; i += 3) {
-        pos.push(pa[i], pa[i + 1], pa[i + 2]);
-        nor.push(na[i], na[i + 1], na[i + 2]);
-        col.push(c.r, c.g, c.b);
+      const ka = p.keep && g.attributes.color ? g.attributes.color.array : null; // couleurs déjà peintes
+      for (let i = 0; i < pa.length; i += 9) {
+        // triangle dégénéré (pointe des cônes) : on le saute
+        const ux = pa[i + 3] - pa[i], uy = pa[i + 4] - pa[i + 1], uz = pa[i + 5] - pa[i + 2];
+        const vx = pa[i + 6] - pa[i], vy = pa[i + 7] - pa[i + 1], vz = pa[i + 8] - pa[i + 2];
+        const cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx;
+        if (cx * cx + cy * cy + cz * cz < 1e-14) continue;
+        for (let k = i; k < i + 9; k += 3) {
+          pos.push(pa[k], pa[k + 1], pa[k + 2]);
+          nor.push(na[k], na[k + 1], na[k + 2]);
+          if (ka) col.push(ka[k], ka[k + 1], ka[k + 2]); else col.push(c.r, c.g, c.b);
+        }
       }
     }
     const g = new THREE.BufferGeometry();
@@ -828,6 +847,25 @@ body {
     }
     return g;
   }
+  // Retire les faces jamais vues : dessous (la caméra reste au-dessus des soldats debout)
+  // et, si away = ±1, les faces tournées à l'opposé de la caméra (alliés vus de dos, ennemis de face)
+  function dropUnder(g, away) {
+    const P = g.attributes.position.array, N = g.attributes.normal.array, C = g.attributes.color.array;
+    const pos = [], nor = [], col = [];
+    for (let i = 0; i < P.length; i += 9) {
+      const ux = P[i + 3] - P[i], uy = P[i + 4] - P[i + 1], uz = P[i + 5] - P[i + 2];
+      const vx = P[i + 6] - P[i], vy = P[i + 7] - P[i + 1], vz = P[i + 8] - P[i + 2];
+      const cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx;
+      const l = Math.sqrt(cx * cx + cy * cy + cz * cz);
+      if (cy < -0.9 * l || (away && cz * away > 0.8 * l)) continue;
+      for (let k = i; k < i + 9; k++) { pos.push(P[k]); nor.push(N[k]); col.push(C[k]); }
+    }
+    const o = new THREE.BufferGeometry();
+    o.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    o.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    o.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    return o;
+  }
   function shadeCol(hex, f) { const c = new THREE.Color(hex); c.multiplyScalar(f); return c.getHex(); }
   const BOOT_A = 0x3a2a1c, BOOT_E = 0x161412;
   // Pièces d'une jambe (hanche en 0), dans le repère du modèle avant l'échelle 1.25
@@ -839,7 +877,7 @@ body {
     ];
   }
   // Soldat : allié (casque rond, sac à dos) ou ennemi (casque à bord évasé, cartouchières croisées)
-  function makeSoldier(body, legs, helm, withLegs, kind) {
+  function makeSoldier(body, legs, helm, withLegs, kind, away) {
     kind = kind || (helm === COL.helmA ? 'ally' : 'enemy');
     const ally = kind === 'ally';
     const sleeve = shadeCol(body, 0.9), dark = 0x2b241c;
@@ -848,8 +886,8 @@ body {
       { geo: new THREE.CylinderGeometry(0.235, 0.19, 0.3, 4, 1).rotateY(Math.PI / 4).scale(1, 1, 0.64).translate(0, 0.465, 0), color: body },
       { geo: new THREE.BoxGeometry(0.29, 0.07, 0.2).translate(0, 0.315, 0), color: 0x3b2f22 },
       { geo: new THREE.BoxGeometry(0.06, 0.05, 0.02).translate(0, 0.315, -0.105), color: 0xc9a640 },
-      { geo: new THREE.CylinderGeometry(0.06, 0.07, 0.06, 6).translate(0, 0.625, 0), color: COL.skin },
-      { geo: new THREE.SphereGeometry(0.115, 7, 5).translate(0, 0.715, 0), color: COL.skin },
+      { geo: new THREE.CylinderGeometry(0.06, 0.07, 0.06, 6, 1, true).translate(0, 0.625, 0), color: COL.skin },
+      { geo: new THREE.SphereGeometry(0.115, 7, 4).translate(0, 0.715, 0), color: COL.skin },
       { geo: new THREE.BoxGeometry(0.026, 0.03, 0.02).translate(-0.042, 0.712, -0.104), color: 0x1d1a17 },
       { geo: new THREE.BoxGeometry(0.026, 0.03, 0.02).translate(0.042, 0.712, -0.104), color: 0x1d1a17 },
       // bras qui tiennent le fusil devant soi
@@ -894,9 +932,66 @@ body {
       const boot = ally ? BOOT_A : BOOT_E;
       P.push(...legParts(legs, boot, -0.0704, 0.288), ...legParts(legs, boot, 0.0704, 0.288));
     }
-    const g = mergeShaded(P, 0, 0.8, 0.32);
+    let g = mergeShaded(P, 0, 0.8, 0.32);
+    if (withLegs === false) g = dropUnder(g, away);
     g.scale(1.25, 1.25, 1.25);
     return g;
+  }
+  // Soldat simplifié (distance moyenne, morts) : même silhouette et mêmes couleurs, environ 90 triangles
+  // far : version lointaine (au-delà de LOD_FAR), environ 60 triangles
+  function makeSoldierLow(body, legs, helm, withLegs, far) {
+    const ally = helm === COL.helmA, away = ally ? -1 : 1;
+    const sleeve = shadeCol(body, 0.9);
+    const P = [
+      { geo: new THREE.CylinderGeometry(0.235, 0.19, 0.3, 4, 1).rotateY(Math.PI / 4).scale(1, 1, 0.64).translate(0, 0.465, 0), color: body },
+      { geo: new THREE.SphereGeometry(0.115, far ? 4 : 5, 2).translate(0, 0.7, 0), color: COL.skin },
+      { geo: segGeo([0.13, 0.405, 0.04], [-0.015, 0.505, -0.52], 0.05, 0.06), color: COL.gun }
+    ];
+    if (far) P.push({ geo: segGeo([-0.2, 0.585, 0.01], [0.04, 0.45, -0.2], 0.1, 0.085), color: sleeve });
+    else P.push(
+      { geo: segGeo([0.2, 0.585, 0.01], [0.09, 0.43, -0.12], 0.085, 0.085), color: sleeve },
+      { geo: segGeo([-0.2, 0.585, 0.01], [0.02, 0.462, -0.27], 0.085, 0.085), color: sleeve }
+    );
+    if (ally) {
+      P.push(
+        { geo: new THREE.SphereGeometry(0.15, 5, 2, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 0.85, 1).translate(0, 0.742, 0), color: helm },
+      );
+      if (!far) P.push({ geo: new THREE.CircleGeometry(0.176, 6).rotateX(-Math.PI / 2).translate(0, 0.745, 0), color: shadeCol(helm, 0.82) });
+      // sac à dos : dessus couleur couverture roulée
+      const pack = mergeParts([{ geo: new THREE.BoxGeometry(0.21, 0.24, 0.11).translate(0, 0.48, 0.15), color: 0x5b5a3a }]);
+      const pn = pack.attributes.normal, pc = pack.attributes.color, roll = new THREE.Color(0x8a7a55);
+      for (let i = 0; i < pn.count; i++) if (pn.getY(i) > 0.9) pc.setXYZ(i, roll.r, roll.g, roll.b);
+      P.push({ geo: pack, color: 0xffffff, keep: true });
+    } else {
+      P.push(
+        { geo: new THREE.SphereGeometry(0.14, 5, 2, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, 0.765, 0), color: helm },
+        { geo: new THREE.CylinderGeometry(0.143, 0.182, 0.06, 6, 1, true).translate(0, 0.745, 0), color: shadeCol(helm, 1.25) }
+      );
+      if (!far) P.push({ geo: new THREE.CylinderGeometry(0.17, 0.205, 0.12, 4, 1, true).rotateY(Math.PI / 4).scale(1, 1, 0.7).translate(0, 0.245, 0), color: shadeCol(body, 0.8) });
+    }
+    if (withLegs) for (const ox of [-0.0704, 0.0704]) P.push({ geo: new THREE.BoxGeometry(0.118, 0.3, 0.15).translate(ox, 0.138, -0.015), color: legs });
+    let g = mergeShaded(P, 0, 0.8, 0.32);
+    if (!withLegs) g = dropUnder(g, away);
+    g.scale(1.25, 1.25, 1.25);
+    return g;
+  }
+  // Jambe simplifiée : une seule boîte, la botte en dégradé sombre vers le bas
+  function makeLegLow(color) {
+    const boot = new THREE.Color(color === COL.allyLegs ? BOOT_A : BOOT_E);
+    const g = mergeParts([{ geo: new THREE.BoxGeometry(0.118, 0.3, 0.15).translate(0, -0.15, -0.015), color }]);
+    const p = g.attributes.position, c = g.attributes.color;
+    for (let i = 0; i < p.count; i++) if (p.getY(i) < -0.2) c.setXYZ(i, boot.r, boot.g, boot.b);
+    // ni dessus (dans le buste) ni semelle : 8 triangles
+    const n = g.attributes.normal, keep = [];
+    for (let i = 0; i < p.count; i += 3) if (Math.abs(n.getY(i)) < 0.5) keep.push(i, i + 1, i + 2);
+    const o = new THREE.BufferGeometry();
+    for (const k of ['position', 'normal', 'color']) {
+      const a = g.attributes[k], arr = new Float32Array(keep.length * 3);
+      keep.forEach((v, j) => { arr[j * 3] = a.getX(v); arr[j * 3 + 1] = a.getY(v); arr[j * 3 + 2] = a.getZ(v); });
+      o.setAttribute(k, new THREE.BufferAttribute(arr, 3));
+    }
+    o.scale(1.25, 1.25, 1.25);
+    return o;
   }
   // Une jambe : le haut de la boîte est la hanche (pivot de l'animation)
   function makeLeg(color) {
@@ -970,10 +1065,17 @@ body {
   }
   const HIP_Y = 0.36, LEG_X = 0.088;
   const vcMat = new THREE.MeshLambertMaterial({ vertexColors: true });
-  const allyMesh = new THREE.InstancedMesh(makeSoldier(COL.ally, COL.allyLegs, COL.helmA, false), vcMat, CAP_ALLY);
-  const enemyMesh = new THREE.InstancedMesh(makeSoldier(COL.enemy, COL.enemyLegs, COL.helmE, false), vcMat, CAP_ENEMY_TOTAL);
+  const allyMesh = new THREE.InstancedMesh(makeSoldier(COL.ally, COL.allyLegs, COL.helmA, false, 'ally', -1), vcMat, CAP_ALLY);
+  const enemyMesh = new THREE.InstancedMesh(makeSoldier(COL.enemy, COL.enemyLegs, COL.helmE, false, 'enemy', 1), vcMat, CAP_ENEMY_TOTAL);
   const allyLegs = new THREE.InstancedMesh(makeLeg(COL.allyLegs), vcMat, CAP_ALLY * 2);
   const enemyLegs = new THREE.InstancedMesh(makeLeg(COL.enemyLegs), vcMat, CAP_ENEMY_TOTAL * 2);
+  // Niveaux de détail : modèles simplifiés pour les soldats loin de la caméra
+  const allyLow = new THREE.InstancedMesh(makeSoldierLow(COL.ally, COL.allyLegs, COL.helmA, false), vcMat, CAP_ALLY);
+  const enemyLow = new THREE.InstancedMesh(makeSoldierLow(COL.enemy, COL.enemyLegs, COL.helmE, false), vcMat, CAP_ENEMY_TOTAL);
+  const allyFar = new THREE.InstancedMesh(makeSoldierLow(COL.ally, COL.allyLegs, COL.helmA, false, true), vcMat, CAP_ALLY);
+  const enemyFar = new THREE.InstancedMesh(makeSoldierLow(COL.enemy, COL.enemyLegs, COL.helmE, false, true), vcMat, CAP_ENEMY_TOTAL);
+  const allyLegsLow = new THREE.InstancedMesh(makeLegLow(COL.allyLegs), vcMat, CAP_ALLY * 2);
+  const enemyLegsLow = new THREE.InstancedMesh(makeLegLow(COL.enemyLegs), vcMat, CAP_ENEMY_TOTAL * 2);
   // Ombres douces sous chaque soldat
   function blobTexture() {
     const c = document.createElement('canvas'); c.width = c.height = 64;
@@ -987,7 +1089,7 @@ body {
     new THREE.MeshBasicMaterial({ map: blobTexture(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
     CAP_ALLY + CAP_ENEMY_TOTAL);
   shadowMesh.renderOrder = 1;
-  for (const m of [allyMesh, enemyMesh, allyLegs, enemyLegs, shadowMesh]) {
+  for (const m of [allyMesh, enemyMesh, allyLegs, enemyLegs, allyLow, enemyLow, allyFar, enemyFar, allyLegsLow, enemyLegsLow, shadowMesh]) {
     m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     m.frustumCulled = false;
     m.count = 0;
@@ -1085,7 +1187,8 @@ body {
   const _fc0 = new THREE.Color(), _fc1 = new THREE.Color();
   // p : x,y,z, vx,vy,vz, life, s0→s1 (taille), c0→c1 (couleur), a (opacité), g (gravité), drag, delay, up (montée)
   function fxAdd(L, p) {
-    if (L.list.length >= L.max) L.list.shift();
+    // qualité basse : deux fois moins d'effets en même temps
+    if (L.list.length >= (save.opts && !save.opts.hq ? L.max >> 1 : L.max)) L.list.shift();
     p.t = 0; p.r = Math.random() * 6.28; p.vr = (Math.random() - 0.5) * (p.spin || 1.5);
     p.delay = p.delay || 0; p.drag = p.drag || 0; p.g = p.g || 0;
     L.list.push(p);
@@ -1175,8 +1278,8 @@ body {
 
   // Soldats tombés au sol (restent quelques secondes)
   const CORPSE_MAX = 240;
-  const allyCorpses = new THREE.InstancedMesh(makeSoldier(COL.ally, COL.allyLegs, COL.helmA), vcMat, CORPSE_MAX);
-  const enemyCorpses = new THREE.InstancedMesh(makeSoldier(COL.enemy, COL.enemyLegs, COL.helmE), vcMat, CORPSE_MAX);
+  const allyCorpses = new THREE.InstancedMesh(makeSoldierLow(COL.ally, COL.allyLegs, COL.helmA, true), vcMat, CORPSE_MAX);
+  const enemyCorpses = new THREE.InstancedMesh(makeSoldierLow(COL.enemy, COL.enemyLegs, COL.helmE, true), vcMat, CORPSE_MAX);
   for (const m of [allyCorpses, enemyCorpses]) { m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.frustumCulled = false; m.count = 0; scene.add(m); }
   let corpses = [[], []];
   function spawnCorpse(team, x, z, flung) {
@@ -1499,8 +1602,9 @@ body {
 
   // Décor répété : InstancedMesh découpés en tronçons le long de la route
   // (chaque tronçon a sa propre sphère englobante : le culling reste correct)
-  function addInstances(geo, mat, items, chunk) {
+  function addInstances(geo, mat, items, chunk, fine) {
     if (!items.length) return;
+    if (bake && !mat.map && !mat.transparent) { bakeAdd(geo, mat, items, fine); return; }
     const CH = chunk || 90, byChunk = new Map();
     for (const it of items) { const k = Math.floor(-it.z / CH); if (!byChunk.has(k)) byChunk.set(k, []); byChunk.get(k).push(it); }
     if (!geo.boundingSphere) geo.computeBoundingSphere();
@@ -1524,6 +1628,97 @@ body {
         mesh.setColorAt(i, col.set(it.c != null ? it.c : 0xffffff)); // toujours : matériaux partagés
       });
       levelGroup.add(mesh);
+    }
+  }
+  // Décor fixe « cuit » : toutes les instances d'un tronçon de route fusionnées en une géométrie
+  // (un appel de dessin par tronçon et par couche ; faces tournées vers le bas supprimées : la caméra est toujours au-dessus)
+  const BAKE_CH = 60;
+  let bake = null, bakedChunks = [];
+  const bakeMats = {
+    lit: new THREE.MeshLambertMaterial({ vertexColors: true }),
+    basic: new THREE.MeshBasicMaterial({ vertexColors: true })
+  };
+  function bakeBegin() { bake = new Map(); bakedChunks = []; }
+  function bakeAdd(geo, mat, items, fine) {
+    const g = geo.index ? geo.toNonIndexed() : geo;
+    const pa = g.attributes.position.array, na = g.attributes.normal.array, ca = g.attributes.color && mat.vertexColors ? g.attributes.color.array : null;
+    const layer = (mat.isMeshBasicMaterial ? 'basic' : 'lit') + (fine ? '-fine' + fine : '');
+    const e = new THREE.Euler(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(), m = new THREE.Matrix4(), nm = new THREE.Matrix3();
+    const base = new THREE.Color(mat.color), col = new THREE.Color(), tc = new THREE.Color(), v = new THREE.Vector3(), w = new THREE.Vector3(), t = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+    let idx = 0;
+    for (const it of items) {
+      // fine 3 : un objet sur deux dans la couche « alt », l'autre dans la couche normale
+      const f = fine === 3 ? (idx++ % 2 ? 3 : 0) : fine || 0, ly = f ? layer.split('-')[0] + '-fine' + f : layer.split('-')[0];
+      const key = Math.floor(-it.z / BAKE_CH) + '|' + ly;
+      let B = bake.get(key);
+      if (!B) { B = { layer: ly, fine: f, pos: [], nor: [], col: [] }; bake.set(key, B); }
+      e.set(it.rx || 0, it.ry || 0, it.rz || 0); q.setFromEuler(e);
+      p.set(it.x, it.y || 0, it.z);
+      const sx = it.sx || 1; sc.set(sx, it.sy || sx, it.sz || sx);
+      m.compose(p, q, sc); nm.getNormalMatrix(m);
+      col.copy(base); if (it.c != null) col.multiply(tc.set(it.c));
+      for (let i = 0; i < pa.length; i += 9) {
+        for (let k = 0; k < 3; k++) t[k].fromArray(pa, i + k * 3).applyMatrix4(m);
+        v.subVectors(t[1], t[0]); w.subVectors(t[2], t[0]); v.cross(w);
+        const l = v.length();
+        if (l < 1e-9 || v.y < -0.85 * l) continue;
+        for (let k = 0; k < 3; k++) {
+          B.pos.push(t[k].x, t[k].y, t[k].z);
+          w.fromArray(na, i + k * 3).applyMatrix3(nm).normalize();
+          B.nor.push(w.x, w.y, w.z);
+          if (ca) B.col.push(ca[i + k * 3] * col.r, ca[i + k * 3 + 1] * col.g, ca[i + k * 3 + 2] * col.b);
+          else B.col.push(col.r, col.g, col.b);
+        }
+      }
+    }
+  }
+  function bakeEnd() {
+    for (const B of bake.values()) {
+      if (!B.pos.length) continue;
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(B.pos, 3));
+      g.setAttribute('normal', new THREE.Float32BufferAttribute(B.nor, 3));
+      g.setAttribute('color', new THREE.Float32BufferAttribute(B.col, 3));
+      g.computeBoundingSphere(); g.computeBoundingBox();
+      const mesh = new THREE.Mesh(g, bakeMats[B.layer.split('-')[0]]);
+      mesh.name = 'décor ' + B.layer;
+      mesh.userData.zMax = g.boundingBox.max.z; mesh.userData.zMin = g.boundingBox.min.z; mesh.userData.fine = B.fine;
+      levelGroup.add(mesh);
+      bakedChunks.push(mesh);
+    }
+    bake = null;
+  }
+  // Tronçons au-delà du brouillard (invisibles) ou herbes fines en qualité basse : pas dessinés
+  // fine 1 : petits objets (poteaux, clôtures), affichés jusqu'à 100 m (70 m en qualité basse)
+  // fine 2 : herbes et fleurs, jusqu'à 100 m, absentes en qualité basse
+  // fine 3 : la moitié des arbres, buissons, rochers et cratères, absente en qualité basse
+  function bakeCull() {
+    const cz = camera.position.z, far = scene.fog.far * 1.1 + 6, lq = save.opts && !save.opts.hq;
+    for (const m of bakedChunks) {
+      const f = m.userData.fine, range = !f ? far : f === 3 ? (lq ? -1e9 : far) : lq ? (f === 2 ? -1e9 : 70) : 100;
+      m.visible = cz - m.userData.zMax < range && m.userData.zMin < cz + 10;
+    }
+    farCull(cz, far);
+  }
+  // Objets du niveau au-delà du brouillard : retirés du rendu par les calques (sans toucher à .visible, réservé au jeu)
+  let farObjs = [];
+  function farCullInit() {
+    farObjs = [];
+    levelGroup.updateMatrixWorld(true);
+    const box = new THREE.Box3();
+    for (const o of levelGroup.children) {
+      if (bakedChunks.includes(o)) continue;
+      box.setFromObject(o);
+      if (box.isEmpty() || box.max.z - box.min.z > 80) continue;
+      farObjs.push({ o, zMax: box.max.z, off: false });
+    }
+  }
+  function farCull(cz, far) {
+    for (const f of farObjs) {
+      const off = cz - f.zMax > far;
+      if (off === f.off) continue;
+      f.off = off;
+      f.o.traverse((m) => { m.layers.mask = off ? 2 : 1; });
     }
   }
   const pick = (r, arr) => arr[Math.floor(r() * arr.length)];
@@ -1660,7 +1855,7 @@ body {
       addInstances(mergeParts([
         { geo: new THREE.BoxGeometry(0.14, 0.8, 0.14).translate(0, 0.4, 0), color: 0x6f777e },
         { geo: new THREE.BoxGeometry(0.06, 0.08, 0.06).translate(0, 0.62, 0.09), color: 0xd84a2f }
-      ]), new THREE.MeshLambertMaterial({ vertexColors: true }), posts);
+      ]), new THREE.MeshLambertMaterial({ vertexColors: true }), posts, 0, 1);
       const beamMat = new THREE.MeshLambertMaterial({ color: 0xaab3ba });
       for (const s of [-1, 1]) for (const [z0, z1] of [[22, 9], [-10, zEnd]]) {
         const len = z0 - z1;
@@ -1672,14 +1867,14 @@ body {
       addInstances(mergeParts([
         { geo: new THREE.CylinderGeometry(0.13, 0.15, 0.75, 6).translate(0, 0.37, 0), color: 0x7a5a3a },
         { geo: new THREE.CylinderGeometry(0.15, 0.15, 0.1, 6).translate(0, 0.62, 0), color: 0xe8e2d0 }
-      ]), new THREE.MeshLambertMaterial({ vertexColors: true }), posts);
+      ]), new THREE.MeshLambertMaterial({ vertexColors: true }), posts, 0, 1);
     } else {
       addInstances(mergeParts([
         { geo: new THREE.BoxGeometry(0.09, 1.0, 0.09).translate(0, 0.5, 0), color: 0x2a2d30 },
         { geo: new THREE.BoxGeometry(0.1, 0.25, 0.1).translate(0, 1.1, 0), color: 0xe0452e },
         { geo: new THREE.BoxGeometry(0.1, 0.25, 0.1).translate(0, 1.35, 0), color: 0xf2f2f2 },
         { geo: new THREE.BoxGeometry(0.1, 0.22, 0.1).translate(0, 1.58, 0), color: 0xe0452e }
-      ]), new THREE.MeshLambertMaterial({ vertexColors: true }), posts);
+      ]), new THREE.MeshLambertMaterial({ vertexColors: true }), posts, 0, 1);
     }
     // Marquage central (routes goudronnées seulement)
     if (B.lines) {
@@ -1717,23 +1912,23 @@ body {
     // Arbres
     const treeGeo = kind === 'snow' ? makeSnowPineGeo() : makeTreeGeo(B);
     const treeN = kind === 'cactus' ? L / 10 : L / 4.5;
-    addInstances(treeGeo, vc, scatter(treeN, 9, 55, 1.5, 1.2, () => { const s = 0.75 + rnd() * 0.75; return { sx: s, c: tint(rnd, 0xffffff, 0.12) }; }));
+    addInstances(treeGeo, vc, scatter(treeN, 9, 55, 1.5, 1.2, () => { const s = 0.75 + rnd() * 0.75; return { sx: s, c: tint(rnd, 0xffffff, 0.12) }; }), 0, 3);
     if (kind === 'pine') {
-      addInstances(makeRoundTreeGeo(), vc, scatter(L / 8, 10, 55, 1.4, 1.5, () => { const s = 0.8 + rnd() * 0.6; return { sx: s, c: pick(rnd, [0xffffff, 0xf0f5e0, 0xffe9c0, 0xe2efd6]) }; }));
+      addInstances(makeRoundTreeGeo(), vc, scatter(L / 8, 10, 55, 1.4, 1.5, () => { const s = 0.8 + rnd() * 0.6; return { sx: s, c: pick(rnd, [0xffffff, 0xf0f5e0, 0xffe9c0, 0xe2efd6]) }; }), 0, 3);
     }
     // Buissons
     const bushCols = kind === 'pine' ? [0x4f8a3c, 0x5d9a44, 0x3f7a35, 0x6b9e48] : kind === 'cactus' ? [0x8c8a4c, 0x9c8455, 0x7d7b45] : [0x4d6b52, 0x5b7a5e];
-    addInstances(makeBushGeo(), vc, scatter(kind === 'snow' ? L / 9 : L / 4, 8.2, 40, 2, 0.6, () => { const s = 0.7 + rnd() * 0.8; return { sx: s, sy: s * (0.7 + rnd() * 0.5), sz: s, y: -0.3, c: tint(rnd, pick(rnd, bushCols), 0.1) }; }));
+    addInstances(makeBushGeo(), vc, scatter(kind === 'snow' ? L / 9 : L / 4, 8.2, 40, 2, 0.6, () => { const s = 0.7 + rnd() * 0.8; return { sx: s, sy: s * (0.7 + rnd() * 0.5), sz: s, y: -0.3, c: tint(rnd, pick(rnd, bushCols), 0.1) }; }), 0, 3);
     // Herbes hautes
     const grassCols = kind === 'pine' ? [0x6e9a3e, 0x87a84a, 0x5c8a38, 0xa0a855] : kind === 'cactus' ? [0xc9b27a, 0xb39a62] : [0xb5ab84, 0x9d9672];
-    addInstances(makeGrassGeo(), vc, scatter(kind === 'pine' ? L / 2.2 : L / 4, 6.8, 26, 2.2, 0.2, () => { const s = 0.8 + rnd() * 0.7; return { sx: s, y: -0.35, c: tint(rnd, pick(rnd, grassCols), 0.08) }; }));
+    addInstances(makeGrassGeo(), vc, scatter(kind === 'pine' ? L / 2.2 : L / 4, 6.8, 26, 2.2, 0.2, () => { const s = 0.8 + rnd() * 0.7; return { sx: s, y: -0.35, c: tint(rnd, pick(rnd, grassCols), 0.08) }; }), 0, 2);
     // Fleurs (plaine)
-    if (kind === 'pine') addInstances(makeFlowerGeo(), vc, scatter(L / 3, 7, 30, 1.8, 0.4, () => ({ y: -0.35, sx: 1 + rnd() * 0.5, c: pick(rnd, [0xf6f2e6, 0xf2c94c, 0xe2533c, 0xb98ae0, 0xf2c94c]) })));
+    if (kind === 'pine') addInstances(makeFlowerGeo(), vc, scatter(L / 3, 7, 30, 1.8, 0.4, () => ({ y: -0.35, sx: 1 + rnd() * 0.5, c: pick(rnd, [0xf6f2e6, 0xf2c94c, 0xe2533c, 0xb98ae0, 0xf2c94c]) })), 0, 2);
     // Rochers
     addInstances(new THREE.DodecahedronGeometry(0.9, 0), new THREE.MeshLambertMaterial({ color: 0xffffff }), scatter(L / 6, 8, 45, 1.3, 0.8, () => {
       const sc = 0.4 + rnd() * 1.4;
       return { sx: sc, sy: sc * 0.7, sz: sc, y: sc * 0.2 - 0.2, rx: rnd() * 3, rz: rnd() * 3, c: tint(rnd, B.rock, 0.12) };
-    }));
+    }), 0, 3);
     if (kind === 'snow') {
       // chapeaux de neige posés sur les rochers : petites congères
       addInstances(DOME(), new THREE.MeshLambertMaterial({ color: 0xf4f8fb }), scatter(L / 4, 7, 55, 1.6, 0.5, () => {
@@ -1755,7 +1950,7 @@ body {
       })), 140);
     }
     // Cratères d'obus
-    addInstances(makeCraterGeo(B), vc, scatter(L / 28, 8, 40, 1.4, 2, () => ({ y: -0.35, sx: 0.7 + rnd() * 0.8 })));
+    addInstances(makeCraterGeo(B), vc, scatter(L / 28, 8, 40, 1.4, 2, () => ({ y: -0.35, sx: 0.7 + rnd() * 0.8 })), 0, 3);
     // Épaves de véhicules
     const wrecks = scatter(L / 70, 10, 26, 1.2, 3, () => ({ rx: (rnd() - 0.5) * 0.15, rz: (rnd() - 0.5) * 0.25, y: -0.2, tank: rnd() < 0.4 }));
     addInstances(makeWreckGeo(false), vc, wrecks.filter((w) => !w.tank));
@@ -1770,8 +1965,8 @@ body {
       for (let k = 0; k <= len; k += 2.5) fposts.push({ x, z: z - k, rz: (rnd() - 0.5) * 0.12, y: -0.3 });
       for (const wy of [0.35, 0.72]) wires.push({ x, y: wy, z: z - len / 2, sx: 1, sy: 1, sz: len });
     }
-    addInstances(new THREE.BoxGeometry(0.12, 1.15, 0.12).translate(0, 0.55, 0), new THREE.MeshLambertMaterial({ color: kind === 'snow' ? 0x4a3d30 : 0x5e4a34 }), fposts);
-    addInstances(new THREE.BoxGeometry(0.035, 0.035, 1), new THREE.MeshLambertMaterial({ color: 0x77777a }), wires);
+    addInstances(new THREE.BoxGeometry(0.12, 1.15, 0.12).translate(0, 0.55, 0), new THREE.MeshLambertMaterial({ color: kind === 'snow' ? 0x4a3d30 : 0x5e4a34 }), fposts, 0, 1);
+    addInstances(new THREE.BoxGeometry(0.035, 0.035, 1), new THREE.MeshLambertMaterial({ color: 0x77777a }), wires, 0, 1);
     // Poteaux télégraphiques
     if (kind !== 'cactus') {
       const poles = [], pw = [];
@@ -2358,7 +2553,8 @@ body {
     const roadLen = finalD + 90;
     const roadMid = -(finalD + 60) / 2 + 15;
 
-    // Décor du monde : sol, route, végétation, camp
+    // Décor du monde : sol, route, végétation, camp (décor fixe fusionné par tronçons)
+    bakeBegin();
     buildRoadside(B, roadLen, roadMid, finalD);
     buildScenery(B, roadLen, finalD);
     // Murets de sacs de sable le long de la route
@@ -2376,6 +2572,7 @@ body {
     }
     addInstances(mergeParts(bagParts), new THREE.MeshLambertMaterial({ vertexColors: true }), bagItems);
     buildCamp(B);
+    bakeEnd();
 
     // Lignes de jeu
     gates = []; obstacles = []; squads = []; mines = []; crates = [];
@@ -2484,6 +2681,7 @@ body {
     const fort = buildFort(B);
     fort.position.set(0, 0, -(finalD + 16));
     levelGroup.add(fort);
+    farCullInit();
 
     // Armée de départ
     ally.count = startCount; ally.cx = 0; ally.d = 0; ally.units = [];
@@ -3191,13 +3389,14 @@ body {
   }
   function applyQuality() {
     renderer.setPixelRatio(save.opts && !save.opts.hq ? 1 : Math.min(window.devicePixelRatio || 1, 2));
+    applyFog();
     resize();
   }
   // Recolore les soldats alliés (attribut de couleur des géométries) sans toucher aux modèles
   function applyCamo() {
     const c = CAMOS.find((x) => x.id === save.camo) || CAMOS[0];
     const map = [[COL.ally, c.body], [COL.allyLegs, c.legs], [COL.helmA, c.helm]].map(([a, b]) => [new THREE.Color(a), new THREE.Color(b)]);
-    for (const m of [allyMesh, allyLegs, allyCorpses]) {
+    for (const m of [allyMesh, allyLegs, allyLow, allyFar, allyLegsLow, allyCorpses]) {
       const ca = m && m.geometry && m.geometry.attributes.color;
       if (!ca) continue;
       const ud = m.geometry.userData;
@@ -3417,8 +3616,8 @@ body {
     $(id).addEventListener('change', () => { ensureAudio(); applyAudioOpts(); persist(); if (key === 'sfx') sfx('good'); });
   }
   $('optVib').addEventListener('click', () => { save.opts.vib = !save.opts.vib; persist(); renderOptions(); buzz(40); });
-  $('optHqHigh').addEventListener('click', () => { save.opts.hq = true; persist(); applyQuality(); renderOptions(); });
-  $('optHqLow').addEventListener('click', () => { save.opts.hq = false; persist(); applyQuality(); renderOptions(); });
+  $('optHqHigh').addEventListener('click', () => { save.opts.hq = true; save.opts.hqManual = true; persist(); applyQuality(); renderOptions(); });
+  $('optHqLow').addEventListener('click', () => { save.opts.hq = false; save.opts.hqManual = true; persist(); applyQuality(); renderOptions(); });
   $('resetBtn').addEventListener('click', () => openModal({
     eyebrow: 'Attention', title: 'Tout recommencer ?',
     body: '<p>Opérations, médailles, améliorations, missions, succès et camouflages seront effacés. Tes options sont conservées.</p>',
@@ -4221,6 +4420,11 @@ body {
   }
   // Corps d'un soldat : penché en avant autour de la hanche, buste qui pivote (dir = 1 allié, -1 ennemi)
   const RUN_LEAN = -0.2, IDLE_LEAN = -0.04, _eul = new THREE.Euler(0, 0, 0, 'YXZ');
+  // Niveaux de détail des soldats : nombre de modèles détaillés selon la qualité et la taille de l'armée
+  const LOD_NEAR = 17, LOD_FAR = 21;
+  const lodDist = new Float32Array(CAP_ALLY), lodOrd = new Uint16Array(CAP_ALLY), lodHi = new Uint8Array(CAP_ALLY);
+  function lodHiMax(n) { return save.opts && !save.opts.hq ? 0 : n > 140 ? 24 : 36; }
+  function lodFar() { return save.opts && !save.opts.hq ? 12 : LOD_FAR; }
   function bodyMatrix(lean, twist, x, y, z, dir) {
     _eul.set(lean, dir > 0 ? twist : Math.PI + twist, 0);
     mtx.makeRotationFromEuler(_eul);
@@ -4232,44 +4436,67 @@ body {
     const n = ally.units.length;
     const moving = state === 'run' || state === 'battle' || state === 'victory';
     let sh = 0;
+    // niveau de détail : les alliés les plus proches de la caméra gardent le modèle détaillé
+    const cp = camera.position, hiMax = lodHiMax(n);
+    for (let i = 0; i < n; i++) {
+      const u = ally.units[i], dx = clampX(ally.cx + u.x) - cp.x, dz = -ally.d + u.z - cp.z;
+      lodDist[i] = dx * dx + dz * dz; lodOrd[i] = i; lodHi[i] = 0;
+    }
+    if (hiMax >= n) lodHi.fill(1, 0, n);
+    else if (hiMax > 0) {
+      const ord = lodOrd.subarray(0, n).sort((a, b) => lodDist[a] - lodDist[b]);
+      for (let k = 0; k < hiMax; k++) lodHi[ord[k]] = 1;
+    }
+    let ah = 0, al = 0, af = 0;
+    const far2 = lodFar() * lodFar();
     for (let i = 0; i < n; i++) {
       const u = ally.units[i];
       const ph = bobT + i * 1.7;
       const y = (moving ? Math.abs(Math.sin(ph)) * 0.09 : 0) + (u.y || 0);
       const sw = moving ? Math.sin(ph) * 0.8 : 0;
       const x = clampX(ally.cx + u.x), z = -ally.d + u.z;
+      const hi = lodHi[i], j = hi ? ah++ : al++, lm = hi ? allyLegs : allyLegsLow;
       bodyMatrix(moving ? RUN_LEAN : 0, moving ? Math.sin(ph) * 0.14 : Math.sin(time * 1.4 + i) * 0.05, x, y, z, 1);
-      allyMesh.setMatrixAt(i, mtx);
+      if (hi) allyMesh.setMatrixAt(j, mtx);
+      else if (lodDist[i] > far2) allyFar.setMatrixAt(af++, mtx);
+      else allyLow.setMatrixAt(j - af, mtx);
       mtx.makeRotationX(sw).setPosition(x - LEG_X, HIP_Y + y, z);
-      allyLegs.setMatrixAt(i * 2, mtx);
+      lm.setMatrixAt(j * 2, mtx);
       mtx.makeRotationX(-sw).setPosition(x + LEG_X, HIP_Y + y, z);
-      allyLegs.setMatrixAt(i * 2 + 1, mtx);
+      lm.setMatrixAt(j * 2 + 1, mtx);
       const ss = u.y ? Math.max(0.3, 1 - u.y * 0.15) : 1;
       mtx.makeScale(ss, 1, ss).setPosition(x, 0.02, z);
       shadowMesh.setMatrixAt(sh++, mtx);
     }
-    allyMesh.count = n;
-    allyLegs.count = n * 2;
-    allyMesh.instanceMatrix.needsUpdate = true;
-    allyLegs.instanceMatrix.needsUpdate = true;
+    allyMesh.count = ah; allyLow.count = al - af; allyFar.count = af;
+    allyLegs.count = ah * 2; allyLegsLow.count = al * 2;
+    for (const m of [allyMesh, allyLow, allyFar, allyLegs, allyLegsLow]) m.instanceMatrix.needsUpdate = true;
 
     // Soldats ennemis (seulement les escouades proches)
-    let e = 0;
+    let e = 0, eh = 0, el = 0, ef = 0;
+    const eHiMax = lodHiMax(0) >> 1, eNear2 = LOD_NEAR * LOD_NEAR;
     for (const s of squads) {
       if (!s.alive || s.d - ally.d > 150 || s.d - ally.d < -20) { s.tag.hidden = true; continue; }
       const fighting = battle === s;
-      for (let i = 0; i < s.units.length && e < CAP_ENEMY_TOTAL; i++) {
+      // au-delà du brouillard : soldats invisibles, on ne les dessine pas (l'étiquette reste)
+      const unitN = s.d - ally.d < scene.fog.far - 18 ? s.units.length : 0;
+      for (let i = 0; i < unitN && e < CAP_ENEMY_TOTAL; i++) {
         const u = s.units[i];
         const ph = bobT * 0.9 + i * 1.3;
         const y = fighting ? Math.abs(Math.sin(ph)) * 0.09 : Math.max(0, Math.sin(time * 2.2 + i * 0.7)) * 0.012;
         const sw = fighting ? Math.sin(ph) * 0.75 : 0;
         const x = clampX(s.x + u.x), z = -s.d + u.z;
+        // ennemis proches de la caméra : modèle détaillé (en nombre limité)
+        const d2 = (x - cp.x) * (x - cp.x) + (z - cp.z) * (z - cp.z), hi = eh < eHiMax && d2 < eNear2;
+        const j = hi ? eh++ : el++, lm = hi ? enemyLegs : enemyLegsLow;
         bodyMatrix(fighting ? RUN_LEAN : IDLE_LEAN, fighting ? Math.sin(ph) * 0.14 : Math.sin(time * 0.9 + i * 2.1) * 0.12, x, y, z, -1);
-        enemyMesh.setMatrixAt(e, mtx);
+        if (hi) enemyMesh.setMatrixAt(j, mtx);
+        else if (d2 > far2) enemyFar.setMatrixAt(ef++, mtx);
+        else enemyLow.setMatrixAt(j - ef, mtx);
         mtx.copy(rotPi).multiply(legRot.makeRotationX(sw)).setPosition(x + LEG_X, HIP_Y + y, z);
-        enemyLegs.setMatrixAt(e * 2, mtx);
+        lm.setMatrixAt(j * 2, mtx);
         mtx.copy(rotPi).multiply(legRot.makeRotationX(-sw)).setPosition(x - LEG_X, HIP_Y + y, z);
-        enemyLegs.setMatrixAt(e * 2 + 1, mtx);
+        lm.setMatrixAt(j * 2 + 1, mtx);
         mtx.makeTranslation(x, 0.02, z);
         shadowMesh.setMatrixAt(sh++, mtx);
         e++;
@@ -4278,7 +4505,7 @@ body {
       setTag(s.tag, boss ? 'Général · ' + s.count : s.count);
       placeTag(s.tag, s.x, boss ? 6.6 : 2.4, -s.d);
     }
-    enemyMesh.count = e;
+    enemyMesh.count = eh; enemyLow.count = el - ef; enemyFar.count = ef;
 
     if (bossMesh) {
       const fs = squads[squads.length - 1];
@@ -4343,9 +4570,8 @@ body {
       setTag(c.tag, '+' + c.v);
       placeTag(c.tag, c.x, 2.3, -c.d);
     }
-    enemyMesh.instanceMatrix.needsUpdate = true;
-    enemyLegs.count = e * 2;
-    enemyLegs.instanceMatrix.needsUpdate = true;
+    enemyLegs.count = eh * 2; enemyLegsLow.count = el * 2;
+    for (const m of [enemyMesh, enemyLow, enemyFar, enemyLegs, enemyLegsLow]) m.instanceMatrix.needsUpdate = true;
     shadowMesh.count = sh;
     shadowMesh.instanceMatrix.needsUpdate = true;
 
@@ -4398,11 +4624,29 @@ body {
     $('hudProgress').style.width = Math.min(100, (ally.d / finalD) * 100).toFixed(1) + '%';
     hudTick();
 
+    bakeCull();
     renderer.render(scene, camera);
   }
 
+  // Qualité automatique : on mesure les images/s au début de la première partie ;
+  // sous 40 images/s, on passe en qualité basse (une seule fois, sauf si le joueur a choisi lui-même)
+  const autoQ = { done: false, t: 0, t0: -1, n: 0 };
+  function autoQuality(rawMs) {
+    if (autoQ.done || state !== 'run' || paused) return;
+    const O = save.opts;
+    if (!O || !O.hq || O.hqManual || navigator.webdriver) { autoQ.done = true; return; }
+    if (rawMs > 250) { autoQ.t = 0; autoQ.t0 = -1; return; } // onglet masqué : on recommence
+    autoQ.t += rawMs;
+    if (autoQ.t < 1000) return; // 1 s de mise en route
+    if (autoQ.t0 < 0) { autoQ.t0 = autoQ.t; autoQ.n = 0; return; }
+    autoQ.n++;
+    if (autoQ.t - autoQ.t0 < 3000) return;
+    autoQ.done = true;
+    if (autoQ.n * 1000 / (autoQ.t - autoQ.t0) < 40) { O.hq = false; O.autoLow = true; persist(); applyQuality(); }
+  }
   let lastDt = 0.016, lastRealDt = 0.016;
   function frame(now) {
+    autoQuality(now - last);
     const real = Math.min(0.05, (now - last) / 1000);
     last = now;
     if (slowTimer > 0) { slowTimer -= real; if (slowTimer <= 0) timeScale = 1; }
@@ -4418,15 +4662,19 @@ body {
   }
 
   // Mesure de performance pour les tests (triangles, appels de dessin, objets les plus lourds)
-  window.__renfortsPerf = () => {
+  window.__renfortsPerf = (full) => {
     const acc = [];
     scene.traverse((o) => {
       if (!o.isMesh || !o.visible) return;
+      for (let q = o.parent; q; q = q.parent) if (!q.visible) return;
       const g = o.geometry, n = (g.index ? g.index.count : g.attributes.position.count) / 3;
-      acc.push([Math.round(n * (o.isInstancedMesh ? o.count : 1)), (o.isInstancedMesh ? 'inst×' + o.count + ' ' : '') + (o.material.transparent ? 'transp ' : '') + (o.name || g.type)]);
+      const k = o.isInstancedMesh ? o.count : (g.instanceCount != null ? g.instanceCount : 1);
+      const row = [Math.round(n * k), (o.isInstancedMesh ? 'inst×' + o.count + ' ' : '') + (o.material.transparent ? 'transp ' : '') + (o.name || g.type)];
+      if (full) row.push(Math.round(n), o.frustumCulled && g.boundingSphere ? Math.round(g.boundingSphere.center.z + o.matrixWorld.elements[14]) : 'x', o.material.type);
+      acc.push(row);
     });
     acc.sort((a, b) => b[0] - a[0]);
-    return { tris: renderer.info.render.triangles, calls: renderer.info.render.calls, meshes: acc.length, top: acc.slice(0, 14) };
+    return { tris: renderer.info.render.triangles, calls: renderer.info.render.calls, meshes: acc.length, top: acc.slice(0, full ? 400 : 14), quality: save.opts && save.opts.hq ? 'haute' : 'basse' };
   };
   window.__renforts = { get state() { return state; }, get count() { return ally.count; }, get d() { return ally.d; }, get finalD() { return finalD; }, steer(x) { ally.cx = x; }, nextGate() { const g = gates.find((g) => !g.passed); return g ? { d: g.d, opts: g.opts, xs: g.xs, cost: g.cost } : null; },
     get finalCount() { return curLevel ? curLevel.finalCount : 0; }, get hazards() { return { obstacles: obstacles.filter((o) => !o.dead).map((o) => ({ d: o.d, x: o.cx, w: o.w })), mines: mines.filter((m) => !m.done).map((m) => ({ d: -m.z, x: m.x })), bonus: crates.filter((c) => !c.taken).map((c) => ({ d: c.d, x: c.x })).concat(tankPickup && !tankPickup.taken ? [{ d: tankPickup.d, x: tankPickup.x }] : []), armors: armors.filter((a) => !a.dead).map((a) => ({ d: a.d, x: a.x })), shells: shells.map((s) => ({ d: -s.z1, x: s.x1 })), forks: forks.filter((f) => !f.side).map((f) => ({ d: f.d0, risky: f.risky })) }; }, get rows() { return curLevel ? curLevel.rows.map((r) => r.type + '@' + Math.round(r.d) + (r.count ? '(' + r.count + ')' : '')).join(' ') : ''; },
