@@ -239,17 +239,280 @@ body {
 .tag.ally.t2 span { font-size: 30px; border-color: var(--brass); }
 .tag.ally.hot span { background: var(--brass); color: var(--ink); box-shadow: 0 0 0 3px rgba(255, 255, 255, .7), 0 0 24px rgba(242, 182, 50, .95); }
 .tag.ally.cold span { background: var(--enemy); }
+
+/* ===================== Interface v0.7 : menu, missions, arsenal, options, fin ===================== */
+:root { --paper2: #e7dcc0; --ink2: #2c3522; --tab-h: 62px; }
+.ic { width: 20px; height: 20px; fill: currentColor; flex: none; }
+
+/* HUD */
+.hud { gap: 8px; }
+.hud .chip { height: 34px; box-sizing: border-box; border: 2px solid rgba(243, 236, 217, .14); }
+.chip-medal .ic { width: 22px; height: 22px; margin-left: -4px; }
+.hud .icon-btn { width: 38px; height: 34px; padding: 0; display: grid; place-items: center; border: 2px solid rgba(243, 236, 217, .14); }
+.hud .icon-btn .ic { width: 18px; height: 18px; }
+.hud .progress { position: relative; height: 14px; overflow: visible; background: rgba(29, 36, 22, .45); border-color: var(--ink); }
+.hud .progress > i { border-radius: 5px; background: linear-gradient(180deg, #ffd25c, var(--brass) 55%, #c98d17); }
+.marks { position: absolute; inset: 0; pointer-events: none; }
+.mk { position: absolute; top: 50%; width: 8px; height: 8px; margin: -4px 0 0 -4px; transform: rotate(45deg); border: 2px solid var(--ink); box-sizing: content-box; }
+.mk.e { background: var(--enemy); }
+.mk.c { background: var(--paper); width: 6px; height: 6px; margin: -3px 0 0 -3px; border-width: 2px; }
+.mk.t { background: var(--olive); }
+.mk.past { opacity: .35; }
+.fort-mark { position: absolute; right: -6px; top: 50%; width: 16px; height: 16px; margin-top: -10px; background: var(--enemy); border: 2px solid var(--ink); border-radius: 3px 3px 0 0;
+  clip-path: polygon(0 0, 25% 0, 25% 25%, 40% 25%, 40% 0, 60% 0, 60% 25%, 75% 25%, 75% 0, 100% 0, 100% 100%, 0 100%); }
+
+/* Menu principal */
+.overlay.menu { padding: 0; justify-content: flex-start; align-items: stretch;
+  background: linear-gradient(180deg, rgba(29, 36, 22, .35), rgba(29, 36, 22, 0) 22%, rgba(29, 36, 22, 0) 55%, rgba(29, 36, 22, .45)); }
+.topbar { pointer-events: auto; display: flex; align-items: center; gap: 8px;
+  padding: calc(env(safe-area-inset-top, 0px) + 10px) max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px)); }
+.res { height: 38px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 12px 0 6px;
+  background: rgba(29, 36, 22, .88); color: var(--paper); border: 2px solid rgba(243, 236, 217, .16); border-radius: 999px;
+  font: 700 16px var(--font-ui); font-variant-numeric: tabular-nums; }
+.res .ic { width: 26px; height: 26px; }
+.res b { color: var(--brass); }
+.res-op { padding: 0 12px; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; }
+.res-op b { font-size: 16px; letter-spacing: 0; }
+.gift { margin-left: auto; position: relative; height: 38px; display: flex; align-items: center; gap: 6px; padding: 0 12px 0 10px; cursor: pointer; touch-action: manipulation;
+  background: var(--brass); color: var(--ink); border: 2px solid var(--ink); border-radius: 999px; box-shadow: 0 3px 0 var(--ink);
+  font: 700 12px var(--font-ui); letter-spacing: .08em; text-transform: uppercase; }
+.gift .ic { width: 20px; height: 20px; color: #8a5a2b; }
+.gift.ready { animation: giftPulse 1.4s ease-in-out infinite; }
+@keyframes giftPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+.dot { position: absolute; top: -3px; right: -3px; width: 12px; height: 12px; border-radius: 50%; background: var(--enemy); border: 2px solid var(--paper); }
+.panes { flex: 1; min-height: 0; position: relative; }
+.pane { position: absolute; inset: 0; box-sizing: border-box; display: flex; flex-direction: column; align-items: center;
+  padding: 12px max(16px, env(safe-area-inset-right, 0px)) 12px max(16px, env(safe-area-inset-left, 0px)); }
+.pane-spacer { flex: 1; min-height: 8px; }
+.pane.enter { animation: paneIn .22s ease-out; }
+@keyframes paneIn { from { opacity: .5; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+
+/* Logo animé */
+.menu .logo { display: block; margin-top: clamp(6px, 4vh, 40px); position: relative; animation: logoIn .7s cubic-bezier(.2, 1.6, .4, 1) both, logoFloat 4s ease-in-out .7s infinite; }
+.logo-word { position: relative; display: inline-block; }
+.logo-word::after { content: attr(data-text); position: absolute; inset: 0; color: transparent; -webkit-text-stroke: 0; text-shadow: none;
+  background: linear-gradient(100deg, transparent 38%, rgba(255, 255, 255, .95) 48%, rgba(255, 246, 210, .9) 52%, transparent 62%) no-repeat;
+  background-size: 260% 100%; background-position: 130% 0; -webkit-background-clip: text; background-clip: text; animation: shine 4.5s ease-in-out 1s infinite; }
+.menu .logo small { position: relative; box-shadow: 0 3px 0 var(--ink); border: 2px solid var(--ink); }
+.menu .logo small::before, .menu .logo small::after { content: ""; position: absolute; top: 50%; width: 18px; height: 3px; background: var(--ink); }
+.menu .logo small::before { right: calc(100% + 6px); } .menu .logo small::after { left: calc(100% + 6px); }
+@keyframes logoIn { from { opacity: 0; transform: scale(1.6) rotate(-4deg); } to { opacity: 1; transform: none; } }
+@keyframes logoFloat { 0%, 100% { translate: 0 0; } 50% { translate: 0 -5px; } }
+@keyframes shine { 0% { background-position: 130% 0; } 45%, 100% { background-position: -30% 0; } }
+
+/* Carte de l'opération + améliorations */
+.camp-card { gap: 12px; padding: 14px; }
+.op-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; text-align: left; }
+.op-title { font-family: var(--font-display); font-size: 21px; line-height: 1.05; margin-top: 4px; text-wrap: balance; }
+.op-stars { display: flex; gap: 2px; flex: none; }
+.op-stars svg { width: 20px; height: 20px; fill: rgba(29, 36, 22, .18); }
+.op-stars svg.on { fill: var(--brass); stroke: var(--ink); stroke-width: 1.5px; }
+.btn-play { position: relative; overflow: hidden; font-size: 26px; padding: 16px; border-width: 3px;
+  background: linear-gradient(180deg, #ffd160, var(--brass) 60%, #d99a1c); box-shadow: 0 6px 0 var(--ink); }
+.btn-play:active { transform: translateY(4px); box-shadow: 0 2px 0 var(--ink); }
+.btn-play::after { content: ""; position: absolute; top: 0; bottom: 0; width: 40%; left: -60%; transform: skewX(-20deg);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .55), transparent); animation: playShine 3s ease-in-out infinite; }
+@keyframes playShine { 0%, 55% { left: -60%; } 85%, 100% { left: 130%; } }
+.upg { gap: 3px; padding: 8px 4px 7px; border-radius: 12px; background: rgba(29, 36, 22, .04); box-shadow: 0 3px 0 var(--ink); }
+.upg:active:not([disabled]) { transform: translateY(2px); box-shadow: 0 1px 0 var(--ink); }
+.upg .ic { width: 24px; height: 24px; color: var(--olive); }
+.upg b { font-size: 11px; }
+.lvbar { display: block; width: calc(100% - 14px); height: 5px; border-radius: 3px; background: rgba(29, 36, 22, .15); overflow: hidden; }
+.lvbar i { display: block; height: 100%; width: 0; background: var(--olive); }
+.upg[disabled] { opacity: .6; }
+.upg[disabled] .cost { opacity: .7; }
+
+/* Feuilles (Missions, Arsenal, Options) */
+.sheet { pointer-events: auto; width: 100%; max-width: 440px; flex: 0 1 auto; max-height: 100%; min-height: 0; overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box;
+  background: var(--paper); color: var(--ink); border: 3px solid var(--ink); border-radius: 16px; box-shadow: 0 6px 0 var(--ink); padding: 14px; }
+.sheet-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 10px; margin: 2px 0 10px; }
+.sheet-head:not(:first-child) { margin-top: 18px; padding-top: 14px; border-top: 2px dashed rgba(29, 36, 22, .25); }
+.sheet-head h2 { margin: 0; font: 400 24px var(--font-display); white-space: nowrap; }
+.timer { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--olive); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sheet-note { margin: -4px 0 12px; font-size: 14px; line-height: 1.35; }
+.mis-list { display: flex; flex-direction: column; gap: 8px; }
+.mis { display: flex; align-items: center; gap: 10px; padding: 10px; border: 2px solid rgba(29, 36, 22, .3); border-radius: 12px; background: rgba(255, 255, 255, .35); }
+.mis.done { border-color: var(--ink); background: #fbf2d6; box-shadow: 0 3px 0 var(--ink); }
+.mis.claimed { opacity: .55; }
+.mis-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.mis-main b { font-size: 14px; line-height: 1.2; }
+.mis-main small { font-size: 12px; font-weight: 700; color: var(--olive); font-variant-numeric: tabular-nums; }
+.bar { height: 8px; border-radius: 4px; background: rgba(29, 36, 22, .14); overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--ally); border-radius: 4px; }
+.mis.done .bar i { background: var(--brass); }
+.claim { flex: none; min-width: 84px; min-height: 48px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; cursor: pointer; touch-action: manipulation;
+  border: 2px solid rgba(29, 36, 22, .35); border-radius: 10px; background: transparent; color: var(--ink); font: 700 15px var(--font-ui); font-variant-numeric: tabular-nums; padding: 4px 6px; }
+.claim .rw { display: flex; align-items: center; gap: 3px; }
+.claim .rw .ic { width: 18px; height: 18px; }
+.claim span { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
+.claim[disabled] { cursor: default; }
+.claim.ready { border: 2px solid var(--ink); background: var(--brass); box-shadow: 0 3px 0 var(--ink); animation: giftPulse 1.4s ease-in-out infinite; }
+.claim.ready:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--ink); }
+.claim.got { border-color: transparent; color: var(--olive); }
+.claim.got .ic { width: 22px; height: 22px; }
+
+/* Arsenal : camouflages */
+.camo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.camo { cursor: pointer; touch-action: manipulation; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 6px 8px; min-width: 0;
+  border: 2px solid rgba(29, 36, 22, .35); border-radius: 12px; background: rgba(255, 255, 255, .35); color: var(--ink); font-family: var(--font-ui); }
+.camo.on { border: 3px solid var(--ink); background: #fbf2d6; box-shadow: 0 3px 0 var(--ink); }
+.camo b { font-size: 13px; letter-spacing: .06em; text-transform: uppercase; }
+.camo .st { font-size: 12px; font-weight: 700; color: var(--olive); display: flex; align-items: center; gap: 3px; min-height: 20px; font-variant-numeric: tabular-nums; }
+.camo .st .ic { width: 16px; height: 16px; }
+.camo.buy .st { color: var(--ink); background: var(--brass); border-radius: 6px; padding: 0 6px; }
+.camo.locked .fig { filter: grayscale(.7) brightness(.8); }
+.fig { position: relative; width: 44px; height: 64px; }
+.fig i { position: absolute; display: block; border: 2px solid var(--ink); box-sizing: border-box; }
+.fig .h { left: 9px; top: 0; width: 26px; height: 15px; border-radius: 14px 14px 3px 3px; background: var(--h); z-index: 2; }
+.fig .f { left: 12px; top: 10px; width: 20px; height: 16px; border-radius: 50%; background: #f0c9a0; }
+.fig .b { left: 6px; top: 25px; width: 32px; height: 23px; border-radius: 5px; background: var(--b); }
+.fig .b::after { content: ""; position: absolute; left: -2px; right: -2px; top: 14px; height: 4px; background: #3b2f22; }
+.fig .l { left: 10px; top: 46px; width: 24px; height: 18px; border-radius: 0 0 4px 4px; background: var(--l); }
+.fig .l::after { content: ""; position: absolute; left: 9px; top: 0; bottom: 0; width: 2px; background: var(--ink); }
+
+/* Options */
+.opt-list { display: flex; flex-direction: column; gap: 10px; }
+.opt { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; min-height: 52px; box-sizing: border-box;
+  border: 2px solid rgba(29, 36, 22, .25); border-radius: 12px; background: rgba(255, 255, 255, .3); font-weight: 700; font-size: 15px; }
+.opt > span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.opt small { font-size: 12px; color: var(--olive); font-weight: 700; }
+.opt input[type=range] { -webkit-appearance: none; appearance: none; width: 46%; max-width: 180px; height: 28px; background: transparent; touch-action: pan-y; }
+.opt input[type=range]::-webkit-slider-runnable-track { height: 8px; border-radius: 4px; background: rgba(29, 36, 22, .2); border: 2px solid var(--ink); }
+.opt input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 26px; height: 26px; margin-top: -11px; border-radius: 50%; background: var(--brass); border: 3px solid var(--ink); }
+.opt input[type=range]::-moz-range-track { height: 6px; border-radius: 4px; background: rgba(29, 36, 22, .2); border: 2px solid var(--ink); }
+.opt input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border-radius: 50%; background: var(--brass); border: 3px solid var(--ink); }
+.toggle { flex: none; width: 58px; height: 32px; border-radius: 16px; border: 2px solid var(--ink); background: rgba(29, 36, 22, .2); position: relative; cursor: pointer; padding: 0; touch-action: manipulation; }
+.toggle i { position: absolute; top: 2px; left: 2px; width: 24px; height: 24px; border-radius: 50%; background: var(--paper); border: 2px solid var(--ink); box-sizing: border-box; transition: left .15s; }
+.toggle[aria-checked="true"] { background: var(--olive); }
+.toggle[aria-checked="true"] i { left: 28px; background: var(--brass); }
+.seg { flex: none; display: flex; border: 2px solid var(--ink); border-radius: 10px; overflow: hidden; }
+.seg button { border: 0; padding: 8px 10px; min-height: 36px; background: transparent; color: var(--ink); font: 700 13px var(--font-ui); cursor: pointer; touch-action: manipulation; }
+.seg button + button { border-left: 2px solid var(--ink); }
+.seg button.on { background: var(--brass); }
+.btn.danger { margin-top: 6px; background: transparent; border-color: var(--enemy); color: var(--enemy); box-shadow: none; font-family: var(--font-ui); font-weight: 700; font-size: 15px; padding: 12px; }
+.version { margin: 2px 0 0; text-align: center; font-size: 12px; color: var(--olive); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+
+/* Barre de navigation */
+.tabbar { pointer-events: auto; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; background: var(--ink); border-top: 3px solid var(--brass);
+  padding: 6px max(8px, env(safe-area-inset-right, 0px)) calc(env(safe-area-inset-bottom, 0px) + 6px) max(8px, env(safe-area-inset-left, 0px)); }
+.tab { position: relative; min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; cursor: pointer; touch-action: manipulation;
+  border: 0; border-radius: 12px; background: transparent; color: rgba(243, 236, 217, .6); font: 700 11px var(--font-ui); letter-spacing: .1em; text-transform: uppercase; }
+.tab .ic { width: 24px; height: 24px; }
+.tab.active { color: var(--ink); background: var(--brass); box-shadow: inset 0 -3px 0 rgba(29, 36, 22, .35); }
+.tab:focus-visible, .claim:focus-visible, .camo:focus-visible, .gift:focus-visible, .toggle:focus-visible, .seg button:focus-visible { outline: 3px solid var(--brass); outline-offset: 2px; }
+.tab .dot { top: 4px; right: calc(50% - 22px); }
+
+/* Fin d'opération */
+.overlay.end { background: linear-gradient(180deg, rgba(29, 36, 22, 0) 30%, rgba(29, 36, 22, .55)); pointer-events: auto; }
+.end-panel { gap: 10px; animation: panelUp .35s cubic-bezier(.2, 1.3, .4, 1) both; }
+@keyframes panelUp { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: none; } }
+.stars { display: flex; justify-content: center; align-items: flex-end; gap: 6px; height: 64px; }
+.stars svg { width: 52px; height: 52px; fill: rgba(29, 36, 22, .16); stroke: rgba(29, 36, 22, .3); stroke-width: 1px; }
+.stars svg:nth-child(2) { width: 64px; height: 64px; }
+.stars svg.on { fill: var(--brass); stroke: var(--ink); stroke-width: 1.6px; animation: starPop .45s cubic-bezier(.2, 1.8, .4, 1) both; }
+@keyframes starPop { from { transform: scale(0) rotate(-40deg); } to { transform: none; } }
+.result-lose .stars { display: none; }
+.rewards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; text-align: left; }
+.rewards li { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 14px; font-weight: 700; padding: 6px 10px; border-radius: 8px; background: rgba(29, 36, 22, .06); }
+.rewards li b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rewards li.hl { background: #fbf2d6; border: 2px solid var(--ink); }
+.rewards li.tip { font-weight: 500; background: transparent; padding: 2px 10px; color: var(--olive); }
+.chest-box { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border: 2px dashed rgba(29, 36, 22, .45); border-radius: 12px; text-align: left; }
+.chest-box.opened { border-style: solid; border-color: var(--ink); background: #fbf2d6; }
+.chest-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.chest-txt b { font-family: var(--font-display); font-weight: 400; font-size: 18px; }
+.chest-txt small { font-size: 13px; font-weight: 700; color: var(--olive); }
+.btn-small { font-size: 17px; padding: 10px 14px; box-shadow: 0 3px 0 var(--ink); }
+.chest { position: relative; width: 64px; height: 54px; flex: none; cursor: pointer; }
+.chest i { position: absolute; display: block; box-sizing: border-box; }
+.chest .c-body { left: 0; right: 0; bottom: 0; height: 34px; border: 3px solid var(--ink); border-radius: 4px 4px 6px 6px;
+  background: linear-gradient(90deg, transparent 42%, var(--brass) 42%, var(--brass) 58%, transparent 58%), repeating-linear-gradient(0deg, #8a5a2b 0 9px, #6e4520 9px 11px); }
+.chest .c-lid { left: -2px; right: -2px; top: 2px; height: 22px; border: 3px solid var(--ink); border-radius: 14px 14px 3px 3px; transform-origin: 8% 100%; transition: transform .35s cubic-bezier(.2, 1.6, .4, 1);
+  background: linear-gradient(90deg, transparent 42%, var(--brass) 42%, var(--brass) 58%, transparent 58%), #9a6632; }
+.chest .c-lock { left: 26px; top: 17px; width: 12px; height: 13px; background: var(--brass); border: 2px solid var(--ink); border-radius: 3px; z-index: 2; transition: opacity .2s; }
+.chest .rays { left: -18px; top: -22px; width: 100px; height: 100px; border-radius: 50%; opacity: 0; transition: opacity .3s;
+  background: repeating-conic-gradient(rgba(242, 182, 50, .7) 0 12deg, transparent 12deg 30deg); -webkit-mask: radial-gradient(circle, #000 30%, transparent 70%); mask: radial-gradient(circle, #000 30%, transparent 70%); }
+.chest.shake { animation: chestShake .6s ease-in-out; }
+.chest.open .c-lid { transform: rotate(-38deg) translate(-4px, -8px); }
+.chest.open .c-lock { opacity: 0; }
+.chest.open .rays { opacity: 1; animation: spin 6s linear infinite; }
+@keyframes chestShake { 0%, 100% { transform: none; } 20% { transform: rotate(-8deg); } 40% { transform: rotate(8deg) scale(1.05); } 60% { transform: rotate(-6deg); } 80% { transform: rotate(5deg) scale(1.08); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Pause, modale */
+.quick { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.quick .btn { flex-direction: column; justify-content: center; gap: 2px; padding: 8px 6px; }
+.quick .btn b { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--olive); }
+.modal { z-index: 20; background: rgba(29, 36, 22, .6); }
+.modal .panel { animation: panelUp .3s cubic-bezier(.2, 1.3, .4, 1) both; }
+.modal-actions { display: flex; flex-direction: column; gap: 8px; }
+.days { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.day { border: 2px solid rgba(29, 36, 22, .3); border-radius: 10px; padding: 6px 2px; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--olive); }
+.day b { font: 400 16px var(--font-display); color: var(--ink); display: flex; align-items: center; gap: 2px; }
+.day b .ic { width: 16px; height: 16px; }
+.day.past { opacity: .45; }
+.day.today { border: 3px solid var(--ink); background: var(--brass); color: var(--ink); box-shadow: 0 3px 0 var(--ink); }
+.day.big { grid-column: span 2; }
+.reveal { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.reveal .big-num { font: 400 40px var(--font-display); display: flex; align-items: center; gap: 6px; }
+.reveal .big-num .ic { width: 40px; height: 40px; }
+.toast { border-radius: 14px; padding: 12px 16px; }
+
+.modal-actions .btn.secondary { justify-content: center; }
+.mis-pop { position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 58px); z-index: 7; transform: translateX(-50%); pointer-events: none;
+  display: flex; align-items: center; gap: 10px; width: max-content; max-width: calc(100% - 32px); box-sizing: border-box; padding: 8px 14px 8px 10px;
+  background: var(--paper); color: var(--ink); border: 3px solid var(--ink); border-radius: 12px; box-shadow: 0 4px 0 var(--ink); font-weight: 700; font-size: 14px; line-height: 1.2; }
+.mis-pop .ic { width: 26px; height: 26px; color: var(--ally); }
+.mis-pop small { display: block; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--olive); }
+.mis-pop.in { animation: popIn .35s cubic-bezier(.2, 1.6, .4, 1) both; }
+@keyframes popIn { from { opacity: 0; transform: translate(-50%, -16px) scale(.9); } to { opacity: 1; transform: translateX(-50%); } }
+/* Petits écrans (360×640 et moins) */
+@media (max-height: 700px) {
+  .menu .logo { font-size: clamp(40px, 12vw, 64px); margin-top: 4px; }
+  .menu .logo small { margin-top: 6px; font-size: 11px; }
+  .op-title { font-size: 18px; }
+  .btn-play { font-size: 22px; padding: 12px; }
+  .camp-card { gap: 10px; padding: 12px; }
+  .tab { min-height: 46px; }
+  .stars { height: 50px; } .stars svg { width: 40px; height: 40px; } .stars svg:nth-child(2) { width: 50px; height: 50px; }
+  .end-panel { gap: 8px; padding: 14px; }
+  .end-panel h2 { font-size: 26px; }
+}
+@media (max-height: 600px) { .menu .logo { display: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .menu .logo, .logo-word::after, .btn-play::after, .gift.ready, .claim.ready, .chest.open .rays, .end-panel, .modal .panel, .pane.enter { animation: none !important; }
+  .stars svg.on { animation: none; }
+}
 </style>
 
 <div id="game" aria-label="Jeu Renforts"></div>
 <div class="labels" id="labels"></div>
 
+<!-- Icônes de l'interface (dessinées en SVG, pas d'emoji) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-medal" viewBox="0 0 24 24"><path d="M5 1h5.5l2 6.5H7.5z" fill="#2f6fe0"/><path d="M19 1h-5.5l-2 6.5h5z" fill="#d8432f"/><circle cx="12" cy="15" r="7.6" fill="#f2b632" stroke="#1d2416" stroke-width="2"/><path d="M12 10.6l1.3 2.8 3 .3-2.3 2 .7 3L12 17.2l-2.7 1.5.7-3-2.3-2 3-.3z" fill="#1d2416"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 1.8l3 6.6 7.2.7-5.4 4.9 1.6 7.1L12 17.4l-6.4 3.7 1.6-7.1L1.8 9.1 9 8.4z"/></symbol>
+  <symbol id="i-camp" viewBox="0 0 24 24"><path d="M12 3.5L2 20.5h20zM12 9.2l5.6 9.3H6.4z" fill-rule="evenodd"/><path d="M12 3.5V1h4.5l-1 1.3 1 1.2H12" /></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 3a7 7 0 1 1 0 14 7 7 0 0 1 0-14zm0 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm0 2.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z" fill-rule="evenodd"/></symbol>
+  <symbol id="i-helmet" viewBox="0 0 24 24"><path d="M3 15.5a9 9 0 0 1 18 0V17H3z"/><path d="M1 18h22v2.5H1z"/><path d="M12 6.5v8" stroke="rgba(0,0,0,.35)" stroke-width="1.6"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M3 5h18v2.4H3zM3 10.8h18v2.4H3zM3 16.6h18V19H3z"/><circle cx="8" cy="6.2" r="2.8"/><circle cx="16" cy="12" r="2.8"/><circle cx="10" cy="17.8" r="2.8"/></symbol>
+  <symbol id="i-crate" viewBox="0 0 24 24"><path d="M3 8h18v13H3z"/><path d="M2 4h20v4H2z"/><path d="M10.4 4h3.2v17h-3.2z" fill="#f2b632"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4.5" y="10.5" width="15" height="11" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" fill="none" stroke="currentColor" stroke-width="2.6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M9.2 16.6L4.6 12l-2 2 6.6 6.6L21.4 8.4l-2-2z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M6 4h4.2v16H6zM13.8 4H18v16h-4.2z"/></symbol>
+  <symbol id="i-sound" viewBox="0 0 24 24"><path d="M3 9h4l5-4.5v15L7 15H3z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+  <symbol id="i-mute" viewBox="0 0 24 24"><path d="M3 9h4l5-4.5v15L7 15H3z"/><path d="M15.5 9l6 6M21.5 9l-6 6" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></symbol>
+  <symbol id="i-soldier" viewBox="0 0 24 24"><path d="M6.5 9.5a5.5 5.5 0 0 1 11 0z"/><circle cx="12" cy="11.6" r="3.2"/><path d="M5.5 22v-3.5a4 4 0 0 1 4-4h5a4 4 0 0 1 4 4V22z"/></symbol>
+  <symbol id="i-cross" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm0 2.6a6.4 6.4 0 1 1 0 12.8 6.4 6.4 0 0 1 0-12.8z" fill-rule="evenodd"/><path d="M10.8 0h2.4v8h-2.4zM10.8 16h2.4v8h-2.4zM0 10.8h8v2.4H0zM16 10.8h8v2.4h-8z"/></symbol>
+  <symbol id="i-bag" viewBox="0 0 24 24"><path d="M8 3h8l-2 4h-4z"/><path d="M9 7.5h6c3.5 2.5 6 6 6 9.5 0 3-2 4.5-5 4.5H8c-3 0-5-1.5-5-4.5 0-3.5 2.5-7 6-9.5z"/><path d="M12 10.5v8M9.8 12.6c0-1.5 4.4-1.5 4.4 0s-4.4 1.7-4.4 3.3 4.4 1.5 4.4 0" fill="none" stroke="#f2b632" stroke-width="1.6"/></symbol>
+</svg>
+
 <div class="hud" id="hud" hidden>
-  <div class="chip">Op. <b id="hudLevel">1</b></div>
-  <div class="progress" aria-hidden="true"><i id="hudProgress"></i></div>
-  <div class="chip">★ <b id="hudMedals">0</b></div>
-  <button class="icon-btn" id="pauseBtn" type="button" aria-label="Mettre en pause">II</button>
-  <button class="icon-btn" id="muteBtn" type="button">Son</button>
+  <div class="chip chip-op">Op. <b id="hudLevel">1</b></div>
+  <div class="progress" aria-hidden="true"><i id="hudProgress"></i><span class="marks" id="hudMarks"></span><span class="fort-mark"></span></div>
+  <div class="chip chip-medal"><svg class="ic"><use href="#i-medal"/></svg><b id="hudMedals">0</b></div>
+  <button class="icon-btn" id="pauseBtn" type="button" aria-label="Mettre en pause"><svg class="ic"><use href="#i-pause"/></svg></button>
+  <button class="icon-btn" id="muteBtn" type="button" aria-label="Couper le son"><svg class="ic"><use href="#i-sound" id="muteIcon"/></svg></button>
 </div>
 
 <div class="prime" id="prime" hidden>
@@ -257,30 +520,93 @@ body {
   <strong>★ <b id="primeVal">0</b></strong><em id="primeMult">×1</em>
 </div>
 
-<div class="overlay" id="menu">
-  <div class="logo">RENFORTS<small>Grossis ton armée</small></div>
-  <div class="panel">
-    <div class="eyebrow" id="menuOp">Opération 1</div>
-    <h2>Traverse les portes, écrase l'armée rouge</h2>
-    <p>Glisse pour choisir tes portes. Ramasse les caisses, évite barricades et mines.</p>
-    <button class="btn" id="playBtn" type="button">Lancer l'opération</button>
-    <div class="upgrades" role="group" aria-label="Améliorations du camp">
-      <button class="upg" id="upRecruit" type="button" title="Plus de soldats au départ"><b>Recrues</b><small id="upRecruitLv">1 soldat</small><span class="cost" id="upRecruitCost">★ 40</span></button>
-      <button class="upg" id="upTraining" type="button" title="Tes soldats éliminent plus d'ennemis en combat"><b>Entraînement</b><small id="upTrainingLv">Niv. 0</small><span class="cost" id="upTrainingCost">★ 60</span></button>
-      <button class="upg" id="upLoot" type="button" title="Plus de médailles avec la prime du fort"><b>Butin</b><small id="upLootLv">Niv. 0</small><span class="cost" id="upLootCost">★ 50</span></button>
-    </div>
-    <div class="hint">★ <span id="menuMedals">0</span> médailles</div>
-  </div>
+<!-- Menu principal : barre du haut, onglets, barre de navigation -->
+<div class="overlay menu" id="menu">
+  <header class="topbar">
+    <div class="res" aria-label="Médailles"><svg class="ic"><use href="#i-medal"/></svg><b id="menuMedals">0</b></div>
+    <div class="res res-op"><span>Op.</span><b id="menuLevel">1</b></div>
+    <button class="gift" id="dailyBtn" type="button"><svg class="ic"><use href="#i-crate"/></svg><span>Ravitaillement</span><i class="dot" id="dailyDot" hidden></i></button>
+  </header>
+
+  <main class="panes">
+    <section class="pane pane-camp" id="paneCamp" aria-label="Camp">
+      <div class="logo" id="logo"><span class="logo-word" data-text="RENFORTS">RENFORTS</span><small>Grossis ton armée</small></div>
+      <div class="pane-spacer"></div>
+      <div class="panel camp-card">
+        <div class="op-head">
+          <div>
+            <div class="eyebrow" id="menuOp">Opération 1</div>
+            <div class="op-title" id="menuOpTitle">Traverse les portes, écrase l'armée rouge</div>
+          </div>
+          <div class="op-stars" id="menuStars" aria-label="Meilleur résultat"></div>
+        </div>
+        <button class="btn btn-play" id="playBtn" type="button"><span>Lancer l'opération</span></button>
+        <div class="upgrades" role="group" aria-label="Améliorations du camp">
+          <button class="upg" id="upRecruit" type="button" title="Plus de soldats au départ"><svg class="ic"><use href="#i-soldier"/></svg><b>Recrues</b><small id="upRecruitLv">1 soldat</small><i class="lvbar"><i id="upRecruitBar"></i></i><span class="cost" id="upRecruitCost">★ 40</span></button>
+          <button class="upg" id="upTraining" type="button" title="Tes soldats éliminent plus d'ennemis en combat"><svg class="ic"><use href="#i-cross"/></svg><b>Entraînement</b><small id="upTrainingLv">Niv. 0</small><i class="lvbar"><i id="upTrainingBar"></i></i><span class="cost" id="upTrainingCost">★ 60</span></button>
+          <button class="upg" id="upLoot" type="button" title="Plus de médailles avec la prime du fort"><svg class="ic"><use href="#i-bag"/></svg><b>Butin</b><small id="upLootLv">Niv. 0</small><i class="lvbar"><i id="upLootBar"></i></i><span class="cost" id="upLootCost">★ 50</span></button>
+        </div>
+      </div>
+    </section>
+
+    <section class="pane" id="paneMissions" aria-label="Missions" hidden>
+      <div class="sheet">
+        <div class="sheet-head"><h2>Missions du jour</h2><span class="timer" id="misTimer">Nouvelles dans 00 h 00</span></div>
+        <div class="mis-list" id="dailyList"></div>
+        <div class="sheet-head"><h2>Succès</h2><span class="timer" id="achCount">0 / 0</span></div>
+        <div class="mis-list" id="achList"></div>
+      </div>
+    </section>
+
+    <section class="pane" id="paneArsenal" aria-label="Arsenal" hidden>
+      <div class="sheet">
+        <div class="sheet-head"><h2>Camouflages</h2><span class="timer" id="camoCount">1 / 6</span></div>
+        <p class="sheet-note">La tenue de ton armée. Débloque-les avec tes médailles, le ravitaillement du jour ou les coffres de victoire.</p>
+        <div class="camo-grid" id="camoGrid"></div>
+      </div>
+    </section>
+
+    <section class="pane" id="paneOptions" aria-label="Options" hidden>
+      <div class="sheet">
+        <div class="sheet-head"><h2>Options</h2></div>
+        <div class="opt-list">
+          <label class="opt"><span>Effets sonores<small id="optSfxVal">100 %</small></span><input type="range" id="optSfx" min="0" max="100" step="5"></label>
+          <label class="opt"><span>Musique<small id="optMusicVal">100 %</small></span><input type="range" id="optMusic" min="0" max="100" step="5"></label>
+          <label class="opt"><span>Sensibilité du glisser<small id="optSensVal">100 %</small></span><input type="range" id="optSens" min="50" max="160" step="10"></label>
+          <div class="opt"><span>Vibrations<small>Sur les téléphones compatibles</small></span><button class="toggle" id="optVib" type="button" role="switch" aria-checked="true"><i></i></button></div>
+          <div class="opt"><span>Qualité graphique<small>Basse : plus fluide, moins de batterie</small></span>
+            <div class="seg" role="group" aria-label="Qualité graphique"><button type="button" id="optHqHigh">Haute</button><button type="button" id="optHqLow">Basse</button></div></div>
+          <button class="btn danger" id="resetBtn" type="button">Réinitialiser la progression</button>
+          <p class="version">Renforts · version 0.7</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabbar" aria-label="Navigation">
+    <button class="tab active" type="button" data-tab="Camp"><svg class="ic"><use href="#i-camp"/></svg><span>Camp</span></button>
+    <button class="tab" type="button" data-tab="Missions"><svg class="ic"><use href="#i-target"/></svg><span>Missions</span><i class="dot" id="misDot" hidden></i></button>
+    <button class="tab" type="button" data-tab="Arsenal"><svg class="ic"><use href="#i-helmet"/></svg><span>Arsenal</span></button>
+    <button class="tab" type="button" data-tab="Options"><svg class="ic"><use href="#i-sliders"/></svg><span>Options</span></button>
+  </nav>
 </div>
 
-<div class="overlay" id="end" hidden>
+<!-- Écran de fin d'opération -->
+<div class="overlay end" id="end" hidden>
   <div></div>
-  <div class="panel" id="endPanel">
+  <div class="panel end-panel" id="endPanel">
     <div class="eyebrow" id="endOp">Opération 1</div>
     <h2 id="endTitle">Mission accomplie</h2>
+    <div class="stars" id="endStars"><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg></div>
     <div class="stats">
       <div class="stat"><span id="endStatLabel">Survivants</span><strong id="endSurvivors">0</strong></div>
       <div class="stat"><span>Médailles</span><strong id="endMedals">+0</strong></div>
+    </div>
+    <ul class="rewards" id="endRewards"></ul>
+    <div class="chest-box" id="chestBox" hidden>
+      <div class="chest" id="chest"><i class="rays"></i><i class="c-body"></i><i class="c-lid"></i><i class="c-lock"></i></div>
+      <div class="chest-txt"><b id="chestTitle">Coffre de victoire</b><small id="chestSub">Touche pour l'ouvrir</small></div>
+      <button class="btn btn-small" id="chestBtn" type="button">Ouvrir</button>
     </div>
     <button class="btn" id="endBtn" type="button">Opération suivante</button>
     <button class="btn secondary" id="menuBtn" type="button"><span>Retour au camp</span><span>⟵</span></button>
@@ -293,7 +619,21 @@ body {
     <h2>Pause</h2>
     <button class="btn" id="resumeBtn" type="button">Reprendre</button>
     <button class="btn secondary" id="restartBtn" type="button"><span>Recommencer l'opération</span><span>↻</span></button>
+    <div class="quick">
+      <button class="btn secondary" id="pauseSound" type="button"><span>Son</span><b id="pauseSoundVal">Activé</b></button>
+      <button class="btn secondary" id="pauseVib" type="button"><span>Vibrations</span><b id="pauseVibVal">Activées</b></button>
+    </div>
     <button class="btn secondary" id="quitBtn" type="button"><span>Retour au camp</span><span>⟵</span></button>
+  </div>
+</div>
+
+<!-- Fenêtre modale (ravitaillement, confirmation) -->
+<div class="overlay center modal" id="modal" hidden>
+  <div class="panel" id="modalPanel" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="eyebrow" id="modalEyebrow"></div>
+    <h2 id="modalTitle"></h2>
+    <div id="modalBody"></div>
+    <div class="modal-actions" id="modalActions"></div>
   </div>
 </div>
 
@@ -1619,7 +1959,7 @@ body {
     const w = container.clientWidth || window.innerWidth;
     const dx = (e.clientX - lastX) / w;
     lastX = e.clientX;
-    if (state === 'run' || state === 'battle') ally.cx = Math.max(-CX_CLAMP, Math.min(CX_CLAMP, ally.cx + dx * 15));
+    if (state === 'run' || state === 'battle') ally.cx = Math.max(-CX_CLAMP, Math.min(CX_CLAMP, ally.cx + dx * 15 * sens()));
   });
   const endDrag = () => { dragging = false; };
   container.addEventListener('pointerup', endDrag);
@@ -1643,9 +1983,14 @@ body {
       $(u.id + 'Lv').textContent = u.label(l);
       $(u.id + 'Cost').textContent = maxed ? 'Max' : '★ ' + u.cost(l);
       $(u.id).disabled = maxed || save.medals < u.cost(l);
+      $(u.id + 'Bar').style.width = (l / u.max * 100).toFixed(1) + '%';
     }
-    $('muteBtn').textContent = muted ? 'Muet' : 'Son';
+    $('muteIcon').setAttribute('href', muted ? '#i-mute' : '#i-sound');
+    $('muteBtn').setAttribute('aria-label', muted ? 'Remettre le son' : 'Couper le son');
     $('muteBtn').setAttribute('aria-pressed', String(muted));
+    $('pauseSoundVal').textContent = muted ? 'Coupé' : 'Activé';
+    $('pauseVibVal').textContent = save.opts && !save.opts.vib ? 'Coupées' : 'Activées';
+    renderMenu();
   }
   function persist() { store.set('save', save); }
 
@@ -1672,6 +2017,7 @@ body {
     paused = false;
     state = 'run';
     fxReset();
+    metaRunStart();
     startMusic();
     save.seen = save.seen || {};
     if (!save.seen.intro) { save.seen.intro = true; persist(); showToast('Glisse à gauche ou à droite pour choisir ta porte', true, 4); }
@@ -1681,6 +2027,7 @@ body {
     $('end').hidden = true; $('pause').hidden = true; $('hud').hidden = true; $('menu').hidden = false;
     hideToast();
     buildLevel(); state = 'menu'; stopMusic();
+    persist(); showTab('Camp');
   }
 
   // ---------- Pause ----------
@@ -1719,17 +2066,475 @@ body {
 
   function showEnd(win, survivors, earned) {
     const panel = $('endPanel');
-    panel.className = 'panel ' + (win ? 'result-win' : 'result-lose');
+    panel.className = 'panel end-panel ' + (win ? 'result-win' : 'result-lose');
     $('endOp').textContent = 'Opération ' + (win ? save.level - 1 : save.level);
     $('endTitle').textContent = win ? 'Mission accomplie' : 'Mission échouée';
     $('endStatLabel').textContent = win ? 'Survivants' : 'Ennemis restants';
     $('endSurvivors').textContent = survivors;
     $('endMedals').textContent = '+' + earned;
     $('endBtn').textContent = win ? 'Opération suivante' : 'Réessayer';
+    fillEnd(win, survivors, earned);
+    $('hud').hidden = true;
     $('prime').hidden = true;
     hideToast();
     $('end').hidden = false;
     updateHud();
+  }
+
+  // ---------- Progression : missions, succès, ravitaillement, coffres, camouflages, options ----------
+  // Camouflages de l'armée bleue (couleurs de tenue, jambes, casque)
+  const CAMOS = [
+    { id: 'bleu', name: 'Bleu', body: 0x2f6fe0, legs: 0x23407a, helm: 0x4f6233, cost: 0 },
+    { id: 'foret', name: 'Forêt', body: 0x4f7d3c, legs: 0x34502a, helm: 0x2f3f22, cost: 300 },
+    { id: 'desert', name: 'Désert', body: 0xc9a467, legs: 0x8a6c3e, helm: 0xa3854f, cost: 600 },
+    { id: 'nuit', name: 'Nuit', body: 0x34405e, legs: 0x1e2538, helm: 0x161b28, cost: 1000 },
+    { id: 'neige', name: 'Neige', body: 0xe6ecf0, legs: 0x9fadb9, helm: 0xc9d3da, cost: 1500 },
+    { id: 'or', name: 'Or', body: 0xe7b53a, legs: 0x9a7020, helm: 0xf6d77c, cost: 0, special: true } // coffres et ravitaillement seulement
+  ];
+  // Missions du jour : type d'événement suivi par track(), cibles possibles, récompense de base
+  const MIS = {
+    gateGood: { txt: (n) => 'Passe ' + n + ' portes bleues', n: [15, 20, 30], r: 40 },
+    kills: { txt: (n) => 'Élimine ' + n + ' ennemis', n: [150, 300, 500], r: 40 },
+    win: { txt: (n) => n > 1 ? 'Gagne ' + n + ' opérations' : 'Gagne une opération', n: [2, 3], r: 60 },
+    runs: { txt: (n) => 'Lance ' + n + ' opérations', n: [3, 5], r: 30 },
+    medals: { txt: (n) => 'Gagne ' + n + ' médailles en opération', n: [100, 200, 300], r: 40 },
+    peak: { txt: (n) => 'Atteins une armée de ' + n + ' soldats', n: [80, 120, 180], r: 50 },
+    crate: { txt: (n) => 'Ramasse ' + n + ' caisses de renfort', n: [2, 4], r: 40, lv: 2 },
+    tank: { txt: (n) => n > 1 ? 'Ramasse ' + n + ' blindés' : 'Ramasse un blindé', n: [1, 2], r: 60, lv: 3 },
+    cleanMines: { txt: () => 'Termine une opération sans perdre de soldat aux mines', n: [1], r: 60, lv: 3 }
+  };
+  // Succès permanents (compteurs de save.stats)
+  const ACH = [
+    { id: 'w1', s: 'win', n: 1, r: 20, txt: 'Remporte ta première opération' },
+    { id: 'w10', s: 'win', n: 10, r: 100, txt: 'Remporte 10 opérations' },
+    { id: 'w30', s: 'win', n: 30, r: 300, txt: 'Remporte 30 opérations' },
+    { id: 'g100', s: 'gateGood', n: 100, r: 80, txt: 'Passe 100 portes bleues' },
+    { id: 'g500', s: 'gateGood', n: 500, r: 250, txt: 'Passe 500 portes bleues' },
+    { id: 'k1k', s: 'kills', n: 1000, r: 100, txt: 'Élimine 1 000 ennemis' },
+    { id: 'k10k', s: 'kills', n: 10000, r: 400, txt: 'Élimine 10 000 ennemis' },
+    { id: 'p200', s: 'peak', n: 200, r: 150, txt: 'Atteins une armée de 200 soldats' },
+    { id: 's5', s: 'perfect', n: 5, r: 150, txt: 'Obtiens 3 étoiles sur 5 opérations' },
+    { id: 'c25', s: 'crate', n: 25, r: 80, txt: 'Ramasse 25 caisses de renfort' },
+    { id: 't5', s: 'tank', n: 5, r: 120, txt: 'Ramasse 5 blindés' },
+    { id: 'm5', s: 'cleanMines', n: 5, r: 150, txt: 'Termine 5 opérations sans perte aux mines' },
+    { id: 'b3', s: 'boss', n: 3, r: 200, txt: 'Abats 3 Généraux' }
+  ];
+  const DAILY = [20, 30, 40, 50, 70, 90, 'camo']; // ravitaillement : jour 1 à 7, puis on recommence
+  const TIPS = [
+    'Les portes ×2 rapportent plus quand ton armée est encore petite.',
+    'Améliore tes Recrues au camp pour partir plus nombreux.',
+    'L\'Entraînement fait tomber plus d\'ennemis par soldat.',
+    'Passe sur les caisses : ce sont des renforts gratuits.',
+    'Contourne les barricades par le côté le plus large.'
+  ];
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  const fmt = (n) => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  const medalIc = '<svg class="ic"><use href="#i-medal"/></svg>';
+  const dayKey = (dt) => dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
+  const todayKey = () => dayKey(new Date());
+  const yesterdayKey = () => { const d = new Date(); d.setDate(d.getDate() - 1); return dayKey(d); };
+
+  // Valeurs par défaut des nouveaux champs (les anciennes sauvegardes restent valides)
+  function ensureMeta() {
+    const d = { stats: {}, ach: {}, stars: {}, daily: { last: '', streak: 0 }, camo: 'bleu', camos: ['bleu'], opts: {} };
+    for (const k in d) if (save[k] == null || typeof save[k] !== typeof d[k]) save[k] = d[k];
+    if (!Array.isArray(save.camos)) save.camos = ['bleu'];
+    if (!save.camos.includes('bleu')) save.camos.unshift('bleu');
+    save.opts = Object.assign({ sfx: 1, music: 1, vib: true, hq: true, sens: 1 }, save.opts);
+    if (!CAMOS.some((c) => c.id === save.camo)) save.camo = 'bleu';
+    refreshDaily();
+  }
+  function refreshDaily() {
+    const t = todayKey();
+    if (save.dm && save.dm.day === t && Array.isArray(save.dm.list)) return;
+    let h = 7; for (const ch of t) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    const r = mulberry32(h);
+    const pool = Object.keys(MIS).filter((k) => (save.level || 1) >= (MIS[k].lv || 1));
+    const list = [];
+    while (list.length < 3 && pool.length) {
+      const k = pool.splice(Math.floor(r() * pool.length), 1)[0], M = MIS[k];
+      const i = Math.floor(r() * M.n.length);
+      list.push({ t: k, n: M.n[i], r: Math.round(M.r * (1 + i * 0.5) / 5) * 5, p: 0, c: 0 });
+    }
+    save.dm = { day: t, list };
+  }
+
+  // Compteur d'événements de jeu : track('kills', 12), track('win'), track('peak', 140) (valeur max)
+  let run = { done: [] };
+  function track(ev, n) {
+    if (n == null) n = 1;
+    if (!(n > 0) || !save.stats) return;
+    const isMax = ev === 'peak', S = save.stats;
+    S[ev] = isMax ? Math.max(S[ev] || 0, n) : (S[ev] || 0) + n;
+    run[ev] = isMax ? Math.max(run[ev] || 0, n) : (run[ev] || 0) + n;
+    if (!save.dm) return;
+    for (const m of save.dm.list) {
+      if (m.t !== ev || m.p >= m.n) continue;
+      m.p = Math.min(m.n, isMax ? Math.max(m.p, n) : m.p + n);
+      if (m.p >= m.n) { run.done.push(MIS[m.t].txt(m.n)); if (state === 'run' || state === 'battle') misPop(MIS[m.t].txt(m.n)); }
+    }
+  }
+  function metaRunStart() {
+    run = { done: [], peak: ally.count };
+    track('runs');
+    hudMarkers();
+    applyAudioOpts();
+  }
+  function metaWin() {
+    track('win');
+    if (isBoss(save.level)) track('boss');
+    if (mines.length && !run.mineHit) track('cleanMines');
+  }
+  function claimable() {
+    let n = 0;
+    if (save.dm) for (const m of save.dm.list) if (m.p >= m.n && !m.c) n++;
+    for (const a of ACH) if (!save.ach[a.id] && (save.stats[a.s] || 0) >= a.n) n++;
+    return n;
+  }
+  function sens() { return (save.opts && save.opts.sens) || 1; }
+  function applyAudioOpts() {
+    if (!save.opts) return;
+    if (sfxBus) sfxBus.gain.value = 0.9 * save.opts.sfx;
+    if (musicBus) musicBus.gain.value = 0.3 * save.opts.music;
+  }
+  function applyQuality() {
+    renderer.setPixelRatio(save.opts && !save.opts.hq ? 1 : Math.min(window.devicePixelRatio || 1, 2));
+    resize();
+  }
+  // Recolore les soldats alliés (attribut de couleur des géométries) sans toucher aux modèles
+  function applyCamo() {
+    const c = CAMOS.find((x) => x.id === save.camo) || CAMOS[0];
+    const map = [[COL.ally, c.body], [COL.allyLegs, c.legs], [COL.helmA, c.helm]].map(([a, b]) => [new THREE.Color(a), new THREE.Color(b)]);
+    for (const m of [allyMesh, allyLegs, allyCorpses]) {
+      const ca = m && m.geometry && m.geometry.attributes.color;
+      if (!ca) continue;
+      const ud = m.geometry.userData;
+      if (!ud.baseColor || ud.baseColor.length !== ca.array.length) ud.baseColor = Float32Array.from(ca.array);
+      const src = ud.baseColor, dst = ca.array;
+      for (let i = 0; i < src.length; i += 3) {
+        let r = src[i], g = src[i + 1], b = src[i + 2];
+        for (const [from, to] of map) {
+          if (Math.abs(r - from.r) < 0.02 && Math.abs(g - from.g) < 0.02 && Math.abs(b - from.b) < 0.02) { r = to.r; g = to.g; b = to.b; break; }
+        }
+        dst[i] = r; dst[i + 1] = g; dst[i + 2] = b;
+      }
+      ca.needsUpdate = true;
+    }
+  }
+  const camoFig = (c) => {
+    const hx = (v) => '#' + v.toString(16).padStart(6, '0');
+    return '<span class="fig" style="--b:' + hx(c.body) + ';--l:' + hx(c.legs) + ';--h:' + hx(c.helm) + '"><i class="h"></i><i class="f"></i><i class="b"></i><i class="l"></i></span>';
+  };
+
+  // Barre de progression du HUD : repères des escouades, caisses et blindé
+  let hudMarkEls = [], hudTickN = 0;
+  function hudMarkers() {
+    const el = $('hudMarks'); if (!el) return;
+    const pct = (d) => Math.max(1, Math.min(97, (d / finalD) * 100)).toFixed(1) + '%';
+    let h = '';
+    for (const c of crates) h += '<i class="mk c" data-d="' + c.d + '" style="left:' + pct(c.d) + '"></i>';
+    if (tankPickup) h += '<i class="mk t" data-d="' + tankPickup.d + '" style="left:' + pct(tankPickup.d) + '"></i>';
+    for (const s of squads) if (!s.final) h += '<i class="mk e" data-d="' + s.d + '" style="left:' + pct(s.d) + '"></i>';
+    el.innerHTML = h;
+    hudMarkEls = Array.from(el.children).map((m) => [m, +m.dataset.d]);
+  }
+  function hudTick() {
+    if (++hudTickN % 10) return;
+    for (const [m, d] of hudMarkEls) if (ally.d >= d && !m.classList.contains('past')) m.classList.add('past');
+  }
+  let misPopT = 0;
+  function misPop(txt) {
+    let el = $('misPop');
+    if (!el) { el = document.createElement('div'); el.id = 'misPop'; el.className = 'mis-pop'; el.setAttribute('role', 'status'); document.body.appendChild(el); }
+    el.innerHTML = '<svg class="ic"><use href="#i-target"/></svg><span><small>Mission du jour accomplie</small>' + esc(txt) + '</span>';
+    el.hidden = false; el.classList.remove('in'); void el.offsetWidth; el.classList.add('in');
+    clearTimeout(misPopT); misPopT = setTimeout(() => { el.hidden = true; }, 2800);
+  }
+
+  // ----- Menu : onglets -----
+  let curTab = 'Camp';
+  function showTab(name) {
+    curTab = name;
+    for (const b of document.querySelectorAll('.tab')) { const on = b.dataset.tab === name; b.classList.toggle('active', on); if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); }
+    for (const p of ['Camp', 'Missions', 'Arsenal', 'Options']) {
+      const el = $('pane' + p), on = p === name;
+      if (on && el.hidden) { el.classList.remove('enter'); void el.offsetWidth; el.classList.add('enter'); }
+      el.hidden = !on;
+    }
+    if (name === 'Missions') renderMissions();
+    if (name === 'Arsenal') renderArsenal();
+    if (name === 'Options') renderOptions();
+  }
+  for (const b of document.querySelectorAll('.tab')) b.addEventListener('click', () => { ensureAudio(); applyAudioOpts(); if (b.dataset.tab !== curTab) sfx('coin'); showTab(b.dataset.tab); });
+
+  const OP_TITLES = ['Traverse les portes, écrase l\'armée rouge', 'Grossis tes rangs et prends le fort', 'Choisis bien tes portes, soldat', 'L\'armée rouge tient la route : passe'];
+  function starsHtml(n) { let h = ''; for (let i = 0; i < 3; i++) h += '<svg class="' + (i < n ? 'on' : '') + '"><use href="#i-star"/></svg>'; return h; }
+  function renderMenu() {
+    if (!save.stats) return;
+    $('menuLevel').textContent = save.level;
+    $('menuOpTitle').textContent = isBoss(save.level) ? 'Le Général t\'attend : abats-le et prends son fort' : OP_TITLES[(save.level - 1) % OP_TITLES.length];
+    $('menuStars').innerHTML = starsHtml(save.stars[save.level] || 0);
+    $('menuStars').hidden = !save.stars[save.level];
+    const dr = dailyState().ready;
+    $('dailyDot').hidden = !dr;
+    $('dailyBtn').classList.toggle('ready', dr);
+    $('misDot').hidden = !claimable();
+  }
+  function timeLeft() {
+    const now = new Date(), next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const m = Math.max(0, Math.floor((next - now) / 60000));
+    return String(Math.floor(m / 60)).padStart(2, '0') + ' h ' + String(m % 60).padStart(2, '0');
+  }
+  setInterval(() => {
+    if ($('menu').hidden) return;
+    if (save.dm && save.dm.day !== todayKey()) { refreshDaily(); persist(); renderMenu(); if (curTab === 'Missions') renderMissions(); }
+    if (curTab === 'Missions') $('misTimer').textContent = 'Nouvelles dans ' + timeLeft();
+  }, 5000);
+
+  // ----- Missions et succès -----
+  function misRow(txt, p, n, r, state, key) {
+    const pc = Math.min(100, (p / n) * 100).toFixed(0);
+    const btn = state === 'claimed'
+      ? '<button class="claim got" type="button" disabled aria-label="Récompense récupérée"><svg class="ic"><use href="#i-check"/></svg><span>Récupéré</span></button>'
+      : '<button class="claim' + (state === 'done' ? ' ready' : '') + '" type="button" data-claim="' + key + '"' + (state === 'done' ? '' : ' disabled') + '><span class="rw">' + medalIc + fmt(r) + '</span><span>' + (state === 'done' ? 'Récupérer' : 'Récompense') + '</span></button>';
+    return '<div class="mis ' + state + '"><div class="mis-main"><b>' + esc(txt) + '</b><div class="bar"><i style="width:' + pc + '%"></i></div><small>' + fmt(Math.min(p, n)) + ' / ' + fmt(n) + '</small></div>' + btn + '</div>';
+  }
+  function renderMissions() {
+    refreshDaily();
+    $('misTimer').textContent = 'Nouvelles dans ' + timeLeft();
+    $('dailyList').innerHTML = save.dm.list.map((m, i) => misRow(MIS[m.t].txt(m.n), m.p, m.n, m.r, m.c ? 'claimed' : m.p >= m.n ? 'done' : '', 'd' + i)).join('');
+    const rank = (a) => save.ach[a.id] ? 2 : (save.stats[a.s] || 0) >= a.n ? 0 : 1;
+    const list = ACH.slice().sort((a, b) => rank(a) - rank(b));
+    $('achList').innerHTML = list.map((a) => misRow(a.txt, save.stats[a.s] || 0, a.n, a.r, save.ach[a.id] ? 'claimed' : (save.stats[a.s] || 0) >= a.n ? 'done' : '', 'a' + a.id)).join('');
+    $('achCount').textContent = ACH.filter((a) => save.ach[a.id]).length + ' / ' + ACH.length;
+  }
+  function onClaim(e) {
+    const b = e.target.closest('[data-claim]'); if (!b || b.disabled) return;
+    ensureAudio(); applyAudioOpts();
+    const k = b.dataset.claim;
+    let r = 0;
+    if (k[0] === 'd') { const m = save.dm.list[+k.slice(1)]; if (!m || m.c || m.p < m.n) return; m.c = 1; r = m.r; }
+    else { const a = ACH.find((x) => x.id === k.slice(1)); if (!a || save.ach[a.id] || (save.stats[a.s] || 0) < a.n) return; save.ach[a.id] = 1; r = a.r; }
+    save.medals += r;
+    persist(); updateHud(); renderMissions();
+    medalBump();
+    sfx('good'); for (let i = 0; i < 4; i++) setTimeout(() => sfx('coin'), 80 + i * 70);
+    buzz(25);
+  }
+  $('dailyList').addEventListener('click', onClaim);
+  $('achList').addEventListener('click', onClaim);
+  function medalBump() { try { document.querySelector('.topbar .res').animate([{ transform: 'scale(1.25)' }, { transform: 'scale(1)' }], { duration: 300, easing: 'ease-out' }); } catch (e) {} }
+
+  // ----- Arsenal : camouflages -----
+  function renderArsenal() {
+    $('camoCount').textContent = save.camos.length + ' / ' + CAMOS.length;
+    $('camoGrid').innerHTML = CAMOS.map((c) => {
+      const own = save.camos.includes(c.id), on = save.camo === c.id;
+      let cls = 'camo', st;
+      if (on) { cls += ' on'; st = '<svg class="ic"><use href="#i-check"/></svg>Équipé'; }
+      else if (own) st = 'Équiper';
+      else if (c.special) { cls += ' locked'; st = '<svg class="ic"><use href="#i-lock"/></svg>Coffre'; }
+      else { cls += ' locked' + (save.medals >= c.cost ? ' buy' : ''); st = '★ ' + fmt(c.cost); }
+      return '<button type="button" class="' + cls + '" data-camo="' + c.id + '" aria-pressed="' + on + '">' + camoFig(c) + '<b>' + c.name + '</b><span class="st">' + st + '</span></button>';
+    }).join('');
+  }
+  $('camoGrid').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-camo]'); if (!b) return;
+    ensureAudio(); applyAudioOpts();
+    const c = CAMOS.find((x) => x.id === b.dataset.camo);
+    if (save.camos.includes(c.id)) { save.camo = c.id; persist(); applyCamo(); renderArsenal(); sfx('good'); return; }
+    if (c.special) { openModal({ eyebrow: 'Camouflage', title: c.name, body: '<div class="reveal">' + camoFig(c) + '<p>Se trouve dans les coffres de victoire et au 7e jour du ravitaillement.</p></div>', actions: [{ label: 'Compris', primary: true }] }); return; }
+    if (save.medals < c.cost) { openModal({ eyebrow: 'Camouflage', title: c.name, body: '<div class="reveal">' + camoFig(c) + '<p>Il te faut ★ ' + fmt(c.cost) + ' médailles. Tu en as ' + fmt(save.medals) + '.</p></div>', actions: [{ label: 'Compris', primary: true }] }); sfx('bad'); return; }
+    openModal({
+      eyebrow: 'Camouflage', title: 'Acheter « ' + c.name + ' » ?',
+      body: '<div class="reveal">' + camoFig(c) + '<p>Coût : ★ ' + fmt(c.cost) + ' médailles</p></div>',
+      actions: [{ label: 'Acheter et équiper', primary: true, fn: () => { save.medals -= c.cost; save.camos.push(c.id); save.camo = c.id; persist(); applyCamo(); updateHud(); renderArsenal(); closeModal(); sfx('good'); buzz(30); } }, { label: 'Annuler' }]
+    });
+  });
+
+  // ----- Fenêtre modale -----
+  function openModal(o) {
+    $('modalEyebrow').textContent = o.eyebrow || '';
+    $('modalTitle').textContent = o.title;
+    $('modalBody').innerHTML = o.body || '';
+    const A = $('modalActions'); A.innerHTML = '';
+    for (const a of o.actions) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = a.primary ? 'btn' : a.danger ? 'btn danger' : 'btn secondary';
+      b.textContent = a.label; b.disabled = !!a.disabled;
+      b.addEventListener('click', () => { if (a.fn) a.fn(); else closeModal(); });
+      A.appendChild(b);
+    }
+    $('modal').hidden = false;
+    const f = A.querySelector('button:not([disabled])'); if (f) f.focus();
+  }
+  function closeModal() { $('modal').hidden = true; }
+  $('modal').addEventListener('click', (e) => { if (e.target === $('modal')) closeModal(); });
+  window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('modal').hidden) closeModal(); });
+
+  // ----- Ravitaillement du jour (série de jours) -----
+  function dailyState() {
+    const D = save.daily || { last: '', streak: 0 };
+    if (D.last === todayKey()) return { ready: false, day: D.streak };
+    return { ready: true, day: D.last === yesterdayKey() ? D.streak + 1 : 1 };
+  }
+  function openDaily() {
+    ensureAudio(); applyAudioOpts();
+    const st = dailyState(), idx = (st.day - 1) % 7;
+    let cells = '';
+    for (let i = 0; i < 7; i++) {
+      const v = DAILY[i], cls = i < idx || (i === idx && !st.ready) ? 'past' : i === idx ? 'today' : '';
+      cells += '<div class="day ' + cls + (i === 6 ? ' big' : '') + '">Jour ' + (i + 1) + '<b>' + (v === 'camo' ? 'Camouflage' : medalIc + v) + '</b></div>';
+    }
+    openModal({
+      eyebrow: 'Série : ' + Math.max(st.day, 0) + (st.day > 1 ? ' jours' : ' jour'),
+      title: st.ready ? 'Ravitaillement du jour' : 'Ravitaillement reçu',
+      body: '<div class="days">' + cells + '</div><p class="hint" style="margin-top:10px">' + (st.ready ? 'Reviens chaque jour pour garder ta série.' : 'Prochain ravitaillement dans ' + timeLeft() + '.') + '</p>',
+      actions: st.ready ? [{ label: 'Récupérer', primary: true, fn: claimDaily }, { label: 'Plus tard' }] : [{ label: 'Fermer', primary: true }]
+    });
+  }
+  function claimDaily() {
+    const st = dailyState(); if (!st.ready) return;
+    const v = DAILY[(st.day - 1) % 7];
+    save.daily = { last: todayKey(), streak: st.day };
+    let body;
+    if (v === 'camo') {
+      const locked = CAMOS.filter((c) => !save.camos.includes(c.id));
+      if (locked.length) { const c = locked.find((x) => x.special) || locked[0]; save.camos.push(c.id); body = '<div class="reveal">' + camoFig(c) + '<div class="big-num">' + esc(c.name) + '</div><p>Nouveau camouflage ! Équipe-le dans l\'Arsenal.</p></div>'; }
+      else { save.medals += 200; body = '<div class="reveal"><div class="big-num">' + medalIc + '+200</div></div>'; }
+    } else { save.medals += v; body = '<div class="reveal"><div class="big-num">' + medalIc + '+' + v + '</div><p>Série : ' + st.day + (st.day > 1 ? ' jours' : ' jour') + '</p></div>'; }
+    persist(); updateHud(); medalBump();
+    sfx('win'); buzz([30, 40, 30]);
+    openModal({ eyebrow: 'Ravitaillement', title: 'Livraison reçue', body, actions: [{ label: 'Super', primary: true }] });
+  }
+  $('dailyBtn').addEventListener('click', openDaily);
+  document.addEventListener('click', () => applyAudioOpts());
+
+  // ----- Options -----
+  function renderOptions() {
+    const O = save.opts;
+    $('optSfx').value = Math.round(O.sfx * 100); $('optSfxVal').textContent = Math.round(O.sfx * 100) + ' %';
+    $('optMusic').value = Math.round(O.music * 100); $('optMusicVal').textContent = Math.round(O.music * 100) + ' %';
+    $('optSens').value = Math.round(O.sens * 100); $('optSensVal').textContent = Math.round(O.sens * 100) + ' %';
+    $('optVib').setAttribute('aria-checked', String(!!O.vib));
+    $('optHqHigh').classList.toggle('on', !!O.hq); $('optHqLow').classList.toggle('on', !O.hq);
+    $('optHqHigh').setAttribute('aria-pressed', String(!!O.hq)); $('optHqLow').setAttribute('aria-pressed', String(!O.hq));
+  }
+  for (const [id, key] of [['optSfx', 'sfx'], ['optMusic', 'music'], ['optSens', 'sens']]) {
+    $(id).addEventListener('input', () => { save.opts[key] = $(id).value / 100; applyAudioOpts(); renderOptions(); });
+    $(id).addEventListener('change', () => { ensureAudio(); applyAudioOpts(); persist(); if (key === 'sfx') sfx('good'); });
+  }
+  $('optVib').addEventListener('click', () => { save.opts.vib = !save.opts.vib; persist(); renderOptions(); buzz(40); });
+  $('optHqHigh').addEventListener('click', () => { save.opts.hq = true; persist(); applyQuality(); renderOptions(); });
+  $('optHqLow').addEventListener('click', () => { save.opts.hq = false; persist(); applyQuality(); renderOptions(); });
+  $('resetBtn').addEventListener('click', () => openModal({
+    eyebrow: 'Attention', title: 'Tout recommencer ?',
+    body: '<p>Opérations, médailles, améliorations, missions, succès et camouflages seront effacés. Tes options sont conservées.</p>',
+    actions: [{ label: 'Oui, tout effacer', danger: true, fn: resetProgress }, { label: 'Annuler', primary: true }]
+  }));
+  function resetProgress() {
+    const opts = save.opts;
+    save = { level: 1, medals: 0, recruit: 0, training: 0, loot: 0, seen: {} };
+    ensureMeta(); save.opts = opts;
+    persist(); applyCamo(); buildLevel(); updateHud(); closeModal(); showTab('Camp');
+  }
+  // Pause : réglages rapides
+  $('pauseSound').addEventListener('click', () => { muted = !muted; store.set('muted', muted); applyMute(); updateHud(); });
+  $('pauseVib').addEventListener('click', () => { save.opts.vib = !save.opts.vib; persist(); updateHud(); buzz(40); });
+
+  // ----- Fin d'opération : étoiles, compteurs, récompenses, coffre -----
+  function starsFor(survivors) {
+    const pc = survivors / Math.max(1, run.peak || 1);
+    return pc >= 0.6 ? 3 : pc >= 0.3 ? 2 : 1;
+  }
+  function countUp(el, to, prefix, delay) {
+    const dur = REDUCED ? 0 : 900;
+    el.textContent = (prefix || '') + (dur ? 0 : fmt(to));
+    if (!dur) return;
+    setTimeout(() => {
+      const t0 = performance.now();
+      const tick = (t) => { const f = Math.min(1, (t - t0) / dur); el.textContent = (prefix || '') + fmt(to * (1 - Math.pow(1 - f, 3))); if (f < 1) requestAnimationFrame(tick); };
+      requestAnimationFrame(tick);
+    }, delay || 0);
+  }
+  let pendingChest = null;
+  function rollChest(lv) {
+    const locked = CAMOS.filter((c) => !save.camos.includes(c.id));
+    if (locked.length && Math.random() < 0.22) return { camo: locked[Math.floor(Math.random() * locked.length)].id };
+    return { medals: 15 + Math.round(lv * 4 + Math.random() * (10 + lv * 3)) };
+  }
+  function grantChest() {
+    const c = pendingChest; if (!c || c.got) return;
+    c.got = true;
+    if (c.camo) { if (!save.camos.includes(c.camo)) save.camos.push(c.camo); } else save.medals += c.medals;
+    persist(); updateHud();
+  }
+  function openChest() {
+    const c = pendingChest; if (!c || c.got || c.opening) return;
+    c.opening = true;
+    ensureAudio(); applyAudioOpts();
+    const ch = $('chest'); ch.classList.add('shake'); $('chestBtn').disabled = true;
+    sfx('hit');
+    setTimeout(() => {
+      grantChest();
+      ch.classList.remove('shake'); ch.classList.add('open'); $('chestBox').classList.add('opened');
+      if (c.camo) {
+        const cm = CAMOS.find((x) => x.id === c.camo);
+        $('chestTitle').textContent = 'Camouflage « ' + cm.name + ' »';
+        $('chestSub').textContent = 'Débloqué ! Équipe-le maintenant ou dans l\'Arsenal.';
+        $('chestBtn').textContent = 'Équiper'; $('chestBtn').disabled = false;
+        $('chestBtn').onclick = () => { save.camo = cm.id; persist(); applyCamo(); $('chestBtn').disabled = true; $('chestBtn').textContent = 'Équipé'; sfx('good'); };
+      } else {
+        $('chestTitle').textContent = '+' + c.medals + ' médailles';
+        $('chestSub').textContent = 'Ajoutées à ta réserve';
+        $('chestBtn').hidden = true;
+        countUp($('endMedals'), lastEarned + c.medals, '+');
+      }
+      sfx('win'); buzz([30, 50, 30]);
+    }, REDUCED ? 0 : 650);
+  }
+  $('chestBtn').addEventListener('click', () => { if (pendingChest && !pendingChest.got) openChest(); });
+  $('chest').addEventListener('click', openChest);
+  // un coffre non ouvert n'est jamais perdu
+  $('endBtn').addEventListener('click', grantChest);
+  $('menuBtn').addEventListener('click', grantChest);
+
+  function fillEnd(win, survivors, earned) {
+    ensureMeta();
+    const lv = win ? save.level - 1 : save.level;
+    $('endOp').textContent = 'Opération ' + lv + ' · ' + biomeOf(lv).name;
+    const rw = [];
+    if (win) {
+      track('medals', earned);
+      const stars = starsFor(survivors);
+      if (stars === 3) track('perfect');
+      save.stars[lv] = Math.max(save.stars[lv] || 0, stars);
+      $('endStars').innerHTML = starsHtml(stars);
+      $('endStars').querySelectorAll('svg.on').forEach((s, i) => { s.style.animationDelay = (0.25 + i * 0.22) + 's'; if (!REDUCED) setTimeout(() => sfx('coin'), 250 + i * 220); });
+      $('endTitle').textContent = stars === 3 ? 'Victoire éclatante' : 'Mission accomplie';
+      rw.push(['Prime de mission', '+' + fmt(primeBase)]);
+      rw.push(['Prime du fort · ' + fmt(survivors) + ' soldats', '+' + fmt(Math.round(primeValue))]);
+      if (save.loot) rw.push(['dont bonus Butin', '+' + save.loot * 20 + ' %']);
+      for (const t of run.done) rw.push(['Mission du jour : ' + t, 'À récupérer', 'hl']);
+      pendingChest = rollChest(lv);
+      $('chestBox').hidden = false; $('chestBox').classList.remove('opened');
+      $('chest').className = 'chest';
+      $('chestTitle').textContent = 'Coffre de victoire'; $('chestSub').textContent = 'Médailles ou camouflage';
+      $('chestBtn').hidden = false; $('chestBtn').disabled = false; $('chestBtn').textContent = 'Ouvrir'; $('chestBtn').onclick = null;
+    } else {
+      pendingChest = null;
+      $('chestBox').hidden = true;
+      $('endStars').innerHTML = '';
+      rw.push(['Parcours effectué', Math.min(99, Math.round((ally.d / finalD) * 100)) + ' %']);
+      rw.push(['Plus grande armée', fmt(run.peak || 0) + ' soldats']);
+      for (const t of run.done) rw.push(['Mission du jour : ' + t, 'À récupérer', 'hl']);
+      rw.push([TIPS[Math.floor(Math.random() * TIPS.length)], '', 'tip']);
+    }
+    $('endRewards').innerHTML = rw.map((r) => '<li class="' + (r[2] || '') + '"><span>' + esc(r[0]) + '</span><b>' + esc(r[1]) + '</b></li>').join('');
+    countUp($('endSurvivors'), survivors, '', 200);
+    countUp($('endMedals'), earned, '+', 350);
+    persist();
+    buzz(win ? [40, 60, 40] : 220);
   }
 
   // ---------- Boucle de jeu ----------
@@ -1775,8 +2580,7 @@ body {
 
   // Vibration du téléphone (désactivable par un réglage settings.vibrate === false)
   function buzz(p) {
-    try { if (typeof settings !== 'undefined' && settings && settings.vibrate === false) return; } catch (e) {}
-    if (save.settings && save.settings.vibrate === false) return;
+    if (save.opts && save.opts.vib === false) return; // option « Vibrations » du menu
     const n = fxNow();
     if (n - lastBuzz < 0.12) return;
     lastBuzz = n;
@@ -1988,6 +2792,7 @@ body {
           g.passed = true;
           g.chosen = ally.cx < g.off ? 0 : 1;
           const o = g.opts[g.chosen];
+          track('gates'); if (isGood(o)) track('gateGood');
           const before = ally.count;
           ally.count = applyOp(ally.count, o);
           if (ally.count < before) syncUnits(ally, CAP_ALLY, ally.cx, true);
@@ -1997,6 +2802,7 @@ body {
           if (ally.count < before) addShake(0.15);
           if (allyTag) bump(allyTag);
           if (ally.count <= 0) { lose(); return; }
+          track('peak', ally.count);
         }
       }
 
@@ -2017,6 +2823,7 @@ body {
         c.taken = true;
         if (Math.abs(ally.cx - c.x) < 2.4) {
           ally.count += c.v;
+          track('crate'); track('peak', ally.count);
           ally.dropY = true;
           syncUnits(ally, CAP_ALLY, ally.cx, false);
           ally.dropY = false;
@@ -2035,6 +2842,7 @@ body {
         if (Math.abs(ally.cx - tankPickup.x) < 2.8) {
           const hp = 30 + save.level * 3;
           ally.tank = { hp, max: hp, group: tankPickup.group, turret: tankPickup.turret, fireT: 0.6 };
+          track('tank');
           tankPickup.group.rotation.y = 0;
           floatText('Blindé !', true);
           sfx('good');
@@ -2065,6 +2873,7 @@ body {
       const k = Math.max(ka, ke);
       if (k > 0) {
         ally.count -= ka; s.count -= ke;
+        track('kills', ke);
         syncUnits(ally, CAP_ALLY, ally.cx, 'kill');
         syncUnits(s, s.cap, s.x, 'kill');
         sfx('hit');
@@ -2108,6 +2917,7 @@ body {
             T.fireT = 0.9;
             const k = Math.min(sq.count, 3 + Math.floor(save.level / 2));
             sq.count -= k;
+            track('kills', k);
             addTracer(ally.cx, 1.2, tankZ() - 1.5, sq.x, 0.6, -sq.d, true);
             syncUnits(sq, sq.cap, sq.x, 'kill');
             fireball(sq.x, -sq.d + 1, 0.7);
@@ -2228,6 +3038,7 @@ body {
         }
         if (!hit) continue;
         m.done = true; m.group.visible = false;
+        track('mineHit');
         explodeAt(m.x, m.z, 1.7);
         if (ally.count <= 0) { lose(); return; }
       }
@@ -2309,6 +3120,7 @@ body {
     state = 'victory'; stateTimer = 0;
     primeBase = 10 + save.level * 2;
     primeSoldiers = 0; primeValue = 0;
+    metaWin();
     save.level += 1;
     persist();
     timeScale = 0.3; slowTimer = 0.9;
@@ -2581,6 +3393,7 @@ body {
       else placeTag(allyTag, ally.cx, 2.1, -ally.d);
     }
     $('hudProgress').style.width = Math.min(100, (ally.d / finalD) * 100).toFixed(1) + '%';
+    hudTick();
 
     renderer.render(scene, camera);
   }
@@ -2608,6 +3421,7 @@ body {
     if (saved && typeof saved.level === 'number') save = Object.assign(save, saved);
     if (data && data.save) save = Object.assign(save, data.save);
     muted = !!store.get('muted', false);
+    ensureMeta(); applyCamo(); applyQuality();
     window.claude?.hot?.snapshot?.(() => ({ save }));
     resize();
     const go = () => { buildLevel(); camBase.set(0, 9, 12); requestAnimationFrame((t) => { last = t; frame(t); }); };

@@ -59,7 +59,7 @@ const srv = http.createServer((q, r) => {
   await page.route('**/*', (r) => {
     const u = r.request().url();
     if (u.includes('cdnjs.cloudflare.com/ajax/libs/three.js')) return r.fulfill({ path: path.join(ROOT, 'vendor/three.min.js'), contentType: 'application/javascript' });
-    if (u.startsWith('https://fonts.googleapis.com/')) return r.fulfill({ body: fontCss, contentType: 'text/css' });
+    if (u.startsWith('https://fonts.googleapis.com/')) return r.fulfill({ body: fontCss.split('url(/f/').join('url(http://127.0.0.1:' + port + '/f/'), contentType: 'text/css' });
     if (u.startsWith('http://127.0.0.1:' + port)) return r.continue();
     return r.abort();
   });
