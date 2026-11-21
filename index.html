@@ -408,24 +408,165 @@ body {
     g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
     return g;
   }
-  function makeSoldier(body, legs, helm, withLegs) {
-    const g = mergeParts([
-      { geo: new THREE.BoxGeometry(withLegs === false ? 0.01 : 0.26, withLegs === false ? 0.01 : 0.28, withLegs === false ? 0.01 : 0.16).translate(0, 0.14, 0), color: legs },
-      { geo: new THREE.BoxGeometry(0.34, 0.34, 0.22).translate(0, 0.45, 0), color: body },
-      { geo: new THREE.BoxGeometry(0.36, 0.06, 0.24).translate(0, 0.31, 0), color: 0x3b2f22 },
-      { geo: new THREE.SphereGeometry(0.13, 8, 6).translate(0, 0.73, 0), color: COL.skin },
-      { geo: new THREE.SphereGeometry(0.16, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, 0.76, 0), color: helm },
-      { geo: new THREE.BoxGeometry(0.05, 0.05, 0.44).translate(0.21, 0.47, -0.12), color: COL.gun }
-    ]);
+  // ---------- Modèles des unités (low-poly, couleurs par sommet) ----------
+  // Pièce allongée entre deux points (bras, sangles, fusil, sabre)
+  const _ua = new THREE.Vector3(), _ub = new THREE.Vector3(), _um = new THREE.Matrix4(), _uUp = new THREE.Vector3(0, 1, 0), _uFw = new THREE.Vector3(0, 0, 1);
+  function segGeo(a, b, w, h) {
+    _ua.set(a[0], a[1], a[2]); _ub.set(b[0], b[1], b[2]);
+    const len = _ua.distanceTo(_ub);
+    const g = new THREE.BoxGeometry(w, h, len);
+    _um.identity().lookAt(_ua, _ub, Math.abs(_ub.y - _ua.y) > len * 0.95 ? _uFw : _uUp);
+    _um.setPosition((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2);
+    return g.applyMatrix4(_um);
+  }
+  // Fusionne puis assombrit le bas du modèle (fausse occlusion ambiante)
+  function mergeShaded(parts, y0, y1, ao) {
+    const g = mergeParts(parts);
+    const p = g.attributes.position, c = g.attributes.color;
+    for (let i = 0; i < p.count; i++) {
+      const t = Math.min(1, Math.max(0, (p.getY(i) - y0) / (y1 - y0)));
+      const f = 1 - ao + ao * t;
+      c.setXYZ(i, c.getX(i) * f, c.getY(i) * f, c.getZ(i) * f);
+    }
+    return g;
+  }
+  function shadeCol(hex, f) { const c = new THREE.Color(hex); c.multiplyScalar(f); return c.getHex(); }
+  const BOOT_A = 0x3a2a1c, BOOT_E = 0x161412;
+  // Pièces d'une jambe (hanche en 0), dans le repère du modèle avant l'échelle 1.25
+  function legParts(color, boot, ox, oy) {
+    return [
+      { geo: new THREE.BoxGeometry(0.115, 0.235, 0.13).translate(ox, oy - 0.118, 0), color },
+      { geo: new THREE.BoxGeometry(0.108, 0.05, 0.125).translate(ox, oy - 0.215, 0), color: shadeCol(boot, 1.35) },
+      { geo: new THREE.BoxGeometry(0.122, 0.07, 0.2).translate(ox, oy - 0.265, -0.035), color: boot }
+    ];
+  }
+  // Soldat : allié (casque rond, sac à dos) ou ennemi (casque à bord évasé, cartouchières croisées)
+  function makeSoldier(body, legs, helm, withLegs, kind) {
+    kind = kind || (helm === COL.helmA ? 'ally' : 'enemy');
+    const ally = kind === 'ally';
+    const sleeve = shadeCol(body, 0.9), dark = 0x2b241c;
+    const P = [
+      // buste évasé aux épaules
+      { geo: new THREE.CylinderGeometry(0.235, 0.19, 0.3, 4, 1).rotateY(Math.PI / 4).scale(1, 1, 0.64).translate(0, 0.465, 0), color: body },
+      { geo: new THREE.BoxGeometry(0.29, 0.07, 0.2).translate(0, 0.315, 0), color: 0x3b2f22 },
+      { geo: new THREE.BoxGeometry(0.06, 0.05, 0.02).translate(0, 0.315, -0.105), color: 0xc9a640 },
+      { geo: new THREE.CylinderGeometry(0.06, 0.07, 0.06, 6).translate(0, 0.625, 0), color: COL.skin },
+      { geo: new THREE.SphereGeometry(0.115, 7, 5).translate(0, 0.715, 0), color: COL.skin },
+      { geo: new THREE.BoxGeometry(0.026, 0.03, 0.02).translate(-0.042, 0.712, -0.104), color: 0x1d1a17 },
+      { geo: new THREE.BoxGeometry(0.026, 0.03, 0.02).translate(0.042, 0.712, -0.104), color: 0x1d1a17 },
+      // bras qui tiennent le fusil devant soi
+      { geo: segGeo([0.2, 0.585, 0.01], [0.215, 0.43, 0.03], 0.085, 0.085), color: sleeve },
+      { geo: segGeo([0.215, 0.43, 0.03], [0.09, 0.43, -0.12], 0.08, 0.08), color: sleeve },
+      { geo: new THREE.BoxGeometry(0.065, 0.065, 0.065).translate(0.085, 0.43, -0.13), color: COL.skin },
+      { geo: segGeo([-0.2, 0.585, 0.01], [-0.205, 0.45, -0.1], 0.085, 0.085), color: sleeve },
+      { geo: segGeo([-0.205, 0.45, -0.1], [0.02, 0.462, -0.27], 0.08, 0.08), color: sleeve },
+      { geo: new THREE.BoxGeometry(0.065, 0.065, 0.065).translate(0.03, 0.46, -0.27), color: COL.skin },
+      // fusil : crosse en bois, canon sombre
+      { geo: segGeo([0.13, 0.405, 0.04], [0.075, 0.44, -0.15], 0.055, 0.08), color: 0x6b4a2b },
+      { geo: segGeo([0.075, 0.445, -0.14], [-0.015, 0.505, -0.52], 0.04, 0.045), color: COL.gun }
+    ];
+    if (ally) {
+      P.push(
+        { geo: new THREE.SphereGeometry(0.15, 8, 3, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 0.85, 1).translate(0, 0.742, 0), color: helm },
+        { geo: new THREE.CylinderGeometry(0.17, 0.178, 0.025, 8).translate(0, 0.742, 0), color: shadeCol(helm, 0.82) },
+        // sac à dos, rabat, couverture roulée, gourde
+        { geo: new THREE.BoxGeometry(0.19, 0.19, 0.1).translate(0, 0.46, 0.15), color: 0x5b5a3a },
+        { geo: new THREE.BoxGeometry(0.196, 0.05, 0.106).translate(0, 0.54, 0.152), color: 0x47462c },
+        { geo: new THREE.CylinderGeometry(0.045, 0.045, 0.27, 6).rotateZ(Math.PI / 2).translate(0, 0.6, 0.14), color: 0x8a7a55 },
+        { geo: new THREE.CylinderGeometry(0.042, 0.042, 0.1, 6).translate(-0.17, 0.3, 0.06), color: 0x4a5a3a },
+        // bretelles
+        { geo: segGeo([-0.1, 0.6, -0.11], [-0.09, 0.35, -0.096], 0.04, 0.018), color: dark },
+        { geo: segGeo([0.1, 0.6, -0.11], [0.09, 0.35, -0.096], 0.04, 0.018), color: dark }
+      );
+    } else {
+      P.push(
+        // casque à bord évasé, noir
+        { geo: new THREE.SphereGeometry(0.14, 8, 3, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, 0.765, 0), color: helm },
+        { geo: new THREE.CylinderGeometry(0.143, 0.182, 0.06, 8).translate(0, 0.745, 0), color: shadeCol(helm, 1.25) },
+        // pans de capote sous la ceinture
+        { geo: new THREE.CylinderGeometry(0.17, 0.205, 0.12, 4).rotateY(Math.PI / 4).scale(1, 1, 0.7).translate(0, 0.245, 0), color: shadeCol(body, 0.8) },
+        // cartouchières croisées et cartouchières de ceinture
+        { geo: segGeo([0.13, 0.6, -0.112], [-0.12, 0.34, -0.097], 0.045, 0.018), color: 0x1f1b18 },
+        { geo: segGeo([-0.13, 0.6, -0.112], [0.12, 0.34, -0.097], 0.045, 0.018), color: 0x1f1b18 },
+        { geo: new THREE.BoxGeometry(0.07, 0.06, 0.04).translate(-0.095, 0.318, -0.112), color: 0x2a2420 },
+        { geo: new THREE.BoxGeometry(0.07, 0.06, 0.04).translate(0.095, 0.318, -0.112), color: 0x2a2420 }
+      );
+    }
+    if (withLegs !== false) {
+      const boot = ally ? BOOT_A : BOOT_E;
+      P.push(...legParts(legs, boot, -0.0704, 0.288), ...legParts(legs, boot, 0.0704, 0.288));
+    }
+    const g = mergeShaded(P, 0, 0.8, 0.32);
     g.scale(1.25, 1.25, 1.25);
     return g;
   }
   // Une jambe : le haut de la boîte est la hanche (pivot de l'animation)
   function makeLeg(color) {
-    const g = mergeParts([
-      { geo: new THREE.BoxGeometry(0.12, 0.3, 0.15).translate(0, -0.15, 0), color },
-      { geo: new THREE.BoxGeometry(0.13, 0.07, 0.19).translate(0, -0.27, -0.02), color: 0x2a2219 }
-    ]);
+    const g = mergeShaded(legParts(color, color === COL.allyLegs ? BOOT_A : BOOT_E, 0, 0), -0.3, 0, 0.3);
+    g.scale(1.25, 1.25, 1.25);
+    return g;
+  }
+  // Le Général : capote longue, casquette d'officier, épaulettes dorées, médailles, sabre levé
+  function makeGeneral() {
+    const coat = 0x9e2a1f, coatD = 0x7a1f17, gold = 0xe0b23a, black = 0x151515, glove = 0xf1ece0;
+    const P = [
+      // bottes et pantalon
+      { geo: new THREE.BoxGeometry(0.13, 0.17, 0.2).translate(-0.075, 0.085, -0.02), color: black },
+      { geo: new THREE.BoxGeometry(0.13, 0.17, 0.2).translate(0.075, 0.085, -0.02), color: black },
+      { geo: new THREE.BoxGeometry(0.11, 0.06, 0.13).translate(-0.075, 0.19, 0), color: 0x2a1a16 },
+      { geo: new THREE.BoxGeometry(0.11, 0.06, 0.13).translate(0.075, 0.19, 0), color: 0x2a1a16 },
+      // capote : bas évasé, ceinturon, buste
+      { geo: new THREE.CylinderGeometry(0.19, 0.255, 0.36, 8).scale(1, 1, 0.78).translate(0, 0.33, 0), color: coat },
+      { geo: new THREE.BoxGeometry(0.025, 0.34, 0.02).translate(0, 0.33, -0.19), color: coatD },
+      { geo: new THREE.CylinderGeometry(0.198, 0.198, 0.05, 8).scale(1, 1, 0.78).translate(0, 0.51, 0), color: black },
+      { geo: new THREE.BoxGeometry(0.07, 0.055, 0.03).translate(0, 0.51, -0.155), color: gold },
+      { geo: new THREE.CylinderGeometry(0.245, 0.195, 0.22, 8).scale(1, 1, 0.75).translate(0, 0.64, 0), color: coat },
+      // col doré, épaulettes à franges
+      { geo: new THREE.CylinderGeometry(0.085, 0.11, 0.05, 8).translate(0, 0.765, 0), color: coatD },
+      { geo: new THREE.BoxGeometry(0.05, 0.035, 0.02).translate(-0.05, 0.765, -0.09), color: gold },
+      { geo: new THREE.BoxGeometry(0.05, 0.035, 0.02).translate(0.05, 0.765, -0.09), color: gold },
+      { geo: new THREE.BoxGeometry(0.13, 0.04, 0.14).translate(-0.215, 0.755, 0), color: gold },
+      { geo: new THREE.BoxGeometry(0.13, 0.04, 0.14).translate(0.215, 0.755, 0), color: gold },
+      { geo: new THREE.BoxGeometry(0.14, 0.04, 0.15).translate(-0.22, 0.725, 0), color: shadeCol(gold, 0.75) },
+      { geo: new THREE.BoxGeometry(0.14, 0.04, 0.15).translate(0.22, 0.725, 0), color: shadeCol(gold, 0.75) },
+      // écharpe en diagonale et médailles
+      { geo: segGeo([0.17, 0.74, -0.16], [-0.16, 0.52, -0.17], 0.06, 0.015), color: gold },
+      { geo: new THREE.BoxGeometry(0.13, 0.03, 0.02).translate(-0.095, 0.7, -0.17), color: 0x2f6fe0 },
+      { geo: new THREE.BoxGeometry(0.13, 0.03, 0.02).translate(-0.095, 0.67, -0.17), color: 0xf3ecd9 },
+      { geo: new THREE.CylinderGeometry(0.022, 0.022, 0.02, 8).rotateX(Math.PI / 2).translate(-0.135, 0.625, -0.172), color: gold },
+      { geo: new THREE.CylinderGeometry(0.022, 0.022, 0.02, 8).rotateX(Math.PI / 2).translate(-0.085, 0.625, -0.172), color: 0xd6dbe0 },
+      { geo: new THREE.CylinderGeometry(0.022, 0.022, 0.02, 8).rotateX(Math.PI / 2).translate(-0.035, 0.625, -0.172), color: gold },
+      // boutons dorés
+      { geo: new THREE.BoxGeometry(0.025, 0.025, 0.02).translate(0.06, 0.69, -0.17), color: gold },
+      { geo: new THREE.BoxGeometry(0.025, 0.025, 0.02).translate(0.06, 0.62, -0.17), color: gold },
+      { geo: new THREE.BoxGeometry(0.025, 0.025, 0.02).translate(0.06, 0.42, -0.19), color: gold },
+      { geo: new THREE.BoxGeometry(0.025, 0.025, 0.02).translate(0.06, 0.34, -0.2), color: gold },
+      // bras gauche poing sur la hanche, bras droit levant le sabre
+      { geo: segGeo([-0.22, 0.71, 0], [-0.31, 0.59, 0.02], 0.1, 0.1), color: coat },
+      { geo: segGeo([-0.31, 0.59, 0.02], [-0.2, 0.52, -0.06], 0.09, 0.09), color: coat },
+      { geo: new THREE.BoxGeometry(0.075, 0.075, 0.075).translate(-0.19, 0.52, -0.07), color: glove },
+      { geo: segGeo([0.22, 0.71, 0], [0.31, 0.83, -0.08], 0.1, 0.1), color: coat },
+      { geo: segGeo([0.31, 0.83, -0.08], [0.33, 0.96, -0.16], 0.09, 0.09), color: coat },
+      { geo: new THREE.BoxGeometry(0.08, 0.08, 0.08).translate(0.335, 0.985, -0.17), color: glove },
+      { geo: new THREE.BoxGeometry(0.12, 0.025, 0.04).translate(0.335, 1.03, -0.18), color: gold },
+      { geo: segGeo([0.335, 1.04, -0.185], [0.37, 1.42, -0.36], 0.03, 0.012), color: 0xd8dde2 },
+      // tête, yeux, moustache, sourcils
+      { geo: new THREE.SphereGeometry(0.12, 10, 7).translate(0, 0.86, 0), color: COL.skin },
+      { geo: new THREE.BoxGeometry(0.028, 0.028, 0.02).translate(-0.045, 0.865, -0.11), color: 0x1d1a17 },
+      { geo: new THREE.BoxGeometry(0.028, 0.028, 0.02).translate(0.045, 0.865, -0.11), color: 0x1d1a17 },
+      { geo: new THREE.BoxGeometry(0.05, 0.012, 0.02).translate(-0.045, 0.892, -0.108), color: 0x3a3a3a },
+      { geo: new THREE.BoxGeometry(0.05, 0.012, 0.02).translate(0.045, 0.892, -0.108), color: 0x3a3a3a },
+      { geo: segGeo([-0.075, 0.818, -0.1], [0, 0.835, -0.118], 0.022, 0.026), color: 0xd9d4cc },
+      { geo: segGeo([0.075, 0.818, -0.1], [0, 0.835, -0.118], 0.022, 0.026), color: 0xd9d4cc },
+      // casquette d'officier : bandeau, calotte, visière, insigne
+      { geo: new THREE.CylinderGeometry(0.125, 0.125, 0.05, 10).translate(0, 0.94, 0), color: black },
+      { geo: new THREE.CylinderGeometry(0.125, 0.125, 0.012, 10).translate(0, 0.955, 0).scale(1.005, 1, 1.005), color: gold },
+      { geo: new THREE.CylinderGeometry(0.17, 0.13, 0.07, 10).translate(0, 1.0, 0), color: coat },
+      { geo: new THREE.BoxGeometry(0.2, 0.014, 0.1).rotateX(-0.25).translate(0, 0.925, -0.13), color: black },
+      { geo: new THREE.BoxGeometry(0.17, 0.01, 0.012).translate(0, 0.94, -0.125), color: gold },
+      { geo: new THREE.BoxGeometry(0.05, 0.045, 0.02).translate(0, 0.995, -0.14), color: gold }
+    ];
+    const g = mergeShaded(P, 0, 0.9, 0.3);
     g.scale(1.25, 1.25, 1.25);
     return g;
   }
@@ -473,12 +614,164 @@ body {
     for (let k = 0; k < (n || 3); k++) {
       addPart({ x, y: 0.6, z, vx: (Math.random() - 0.5) * 5, vy: 3 + Math.random() * 3, vz: (Math.random() - 0.5) * 5, life: 0.7, max: 0.7, g: 14, size: 1, color });
     }
+    fxDust(x, 0.35, z, 0.8, 0.5);
   }
-  const CONFETTI = [0x2f6fe0, 0xf2b632, 0xf3ecd9, 0x9fd0ff];
+  const CONFETTI = [0x2f6fe0, 0xf2b632, 0xf3ecd9, 0x9fd0ff, 0xff5a4e, 0x7ddc8a];
   function confetti(x, z, n) {
+    // papiers plats qui virevoltent
     for (let k = 0; k < n; k++) {
       const a = Math.random() * Math.PI * 2, sp = 2 + Math.random() * 6;
-      addPart({ x, y: 1.5, z, vx: Math.cos(a) * sp, vy: 7 + Math.random() * 7, vz: Math.sin(a) * sp, life: 1.8, max: 1.8, g: 9, size: 0.9, color: CONFETTI[k % CONFETTI.length] });
+      const life = 2.6 + Math.random() * 1.4;
+      addPart({ x, y: 1.5, z, vx: Math.cos(a) * sp, vy: 7 + Math.random() * 8, vz: Math.sin(a) * sp, life, max: life, g: 9, size: 1.1, color: CONFETTI[k % CONFETTI.length], flat: true, rx: Math.random() * 6, ry: Math.random() * 6, ph: Math.random() * 6 });
+    }
+    // feux d'artifice au-dessus du fort
+    if (n >= 60) {
+      for (let f = 0; f < 5; f++) {
+        const fx = x + (Math.random() - 0.5) * 14, fy = 8 + Math.random() * 5, fz = z - 4 + (Math.random() - 0.5) * 6, dl = 0.15 + f * 0.35;
+        const col = [0xffd166, 0x6fb6ff, 0xff7a6b, 0xf3ecd9, 0x9dff9d][f];
+        fxFlash(fx, fy, fz, 4.5, col, dl);
+        for (let j = 0; j < 22; j++) {
+          const th = Math.random() * Math.PI * 2, ph = Math.acos(2 * Math.random() - 1), v = 5 + Math.random() * 2;
+          fxAdd(FX.glow, { x: fx, y: fy, z: fz, vx: Math.sin(ph) * Math.cos(th) * v, vy: Math.cos(ph) * v, vz: Math.sin(ph) * Math.sin(th) * v, life: 1.1 + Math.random() * 0.4, s0: 0.55, s1: 0.2, c0: 0xffffff, c1: col, a: 1, g: 4, drag: 1.2, delay: dl });
+        }
+      }
+    }
+  }
+
+  // ---------- Effets : sprites doux (feu, fumée, poussière, étincelles) ----------
+  // Une couche = un seul appel de dessin (géométrie instanciée + petit shader « face caméra »)
+  function fxTexture(lumpy) {
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const x = c.getContext('2d');
+    if (lumpy) {
+      const r = mulberry32(11);
+      for (let k = 0; k < 9; k++) {
+        const px = 32 + (r() - 0.5) * 18, py = 32 + (r() - 0.5) * 18, rad = 10 + r() * 12;
+        const g = x.createRadialGradient(px, py, 0, px, py, rad);
+        g.addColorStop(0, 'rgba(255,255,255,0.5)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+        x.fillStyle = g; x.fillRect(0, 0, 64, 64);
+      }
+      x.globalCompositeOperation = 'destination-in';
+      const m = x.createRadialGradient(32, 32, 14, 32, 32, 31);
+      m.addColorStop(0, 'rgba(0,0,0,1)'); m.addColorStop(1, 'rgba(0,0,0,0)');
+      x.fillStyle = m; x.fillRect(0, 0, 64, 64);
+    } else {
+      const g = x.createRadialGradient(32, 32, 0, 32, 32, 31);
+      g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.25, 'rgba(255,255,255,0.75)');
+      g.addColorStop(0.6, 'rgba(255,255,255,0.18)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+      x.fillStyle = g; x.fillRect(0, 0, 64, 64);
+    }
+    return new THREE.CanvasTexture(c);
+  }
+  const FX_VS = 'attribute vec3 iPos; attribute vec4 iCol; attribute vec2 iSR; varying vec2 vUv; varying vec4 vCol;\n' +
+    'void main(){ vUv = uv; vCol = iCol; vec4 mv = modelViewMatrix * vec4(iPos, 1.0);\n' +
+    ' float c = cos(iSR.y), s = sin(iSR.y); mv.xy += mat2(c, s, -s, c) * position.xy * iSR.x;\n' +
+    ' gl_Position = projectionMatrix * mv; }';
+  const FX_FS = 'uniform sampler2D map; varying vec2 vUv; varying vec4 vCol;\n' +
+    'void main(){ vec4 t = texture2D(map, vUv); float a = t.a * vCol.a; if (a < 0.004) discard; gl_FragColor = vec4(vCol.rgb * t.rgb, a); }';
+  function makeFxLayer(max, tex, additive, order) {
+    const q = new THREE.PlaneGeometry(1, 1);
+    const g = new THREE.InstancedBufferGeometry();
+    g.setIndex(q.index); g.setAttribute('position', q.attributes.position); g.setAttribute('uv', q.attributes.uv);
+    const mk = (n) => new THREE.InstancedBufferAttribute(new Float32Array(max * n), n).setUsage(THREE.DynamicDrawUsage);
+    const pos = mk(3), col = mk(4), sr = mk(2);
+    g.setAttribute('iPos', pos); g.setAttribute('iCol', col); g.setAttribute('iSR', sr);
+    g.instanceCount = 0;
+    const mat = new THREE.ShaderMaterial({ uniforms: { map: { value: tex } }, vertexShader: FX_VS, fragmentShader: FX_FS, transparent: true, depthWrite: false, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending });
+    const mesh = new THREE.Mesh(g, mat);
+    mesh.frustumCulled = false; mesh.renderOrder = order;
+    scene.add(mesh);
+    return { mesh, g, pos, col, sr, list: [], max };
+  }
+  const FX = { smoke: makeFxLayer(520, fxTexture(true), false, 2), glow: makeFxLayer(620, fxTexture(false), true, 3) };
+  const _fc0 = new THREE.Color(), _fc1 = new THREE.Color();
+  // p : x,y,z, vx,vy,vz, life, s0→s1 (taille), c0→c1 (couleur), a (opacité), g (gravité), drag, delay, up (montée)
+  function fxAdd(L, p) {
+    if (L.list.length >= L.max) L.list.shift();
+    p.t = 0; p.r = Math.random() * 6.28; p.vr = (Math.random() - 0.5) * (p.spin || 1.5);
+    p.delay = p.delay || 0; p.drag = p.drag || 0; p.g = p.g || 0;
+    L.list.push(p);
+  }
+  function fxFlash(x, y, z, size, color, delay) {
+    fxAdd(FX.glow, { x, y, z, vx: 0, vy: 0, vz: 0, life: 0.14, s0: size, s1: size * 1.4, c0: 0xffffff, c1: color || 0xffb347, a: 1, delay, spin: 0 });
+  }
+  function fxDust(x, y, z, size, a, col) {
+    fxAdd(FX.smoke, { x: x + (Math.random() - 0.5) * 0.4, y, z: z + (Math.random() - 0.5) * 0.4, vx: (Math.random() - 0.5) * 0.8, vy: 0.3 + Math.random() * 0.5, vz: (Math.random() - 0.5) * 0.8, life: 0.8 + Math.random() * 0.5, s0: size * 0.6, s1: size * 1.8, c0: col || dustColor(), c1: col || dustColor(), a: a || 0.4, drag: 1.5 });
+  }
+  function dustColor() { const b = biomeOf(save.level); return b.kind === 'snow' ? 0xf4f7fa : shadeCol(b.road, 1.35); }
+  function fxSparks(x, y, z, n, col, sp) {
+    for (let j = 0; j < n; j++) {
+      const a = Math.random() * Math.PI * 2, v = (sp || 5) * (0.4 + Math.random() * 0.8);
+      fxAdd(FX.glow, { x, y, z, vx: Math.cos(a) * v, vy: 2 + Math.random() * 5, vz: Math.sin(a) * v, life: 0.35 + Math.random() * 0.4, s0: 0.32, s1: 0.08, c0: 0xffffff, c1: col || 0xffb347, a: 1, g: 14, drag: 0.6 });
+    }
+  }
+  // Ondes de choc et traces brûlées au sol (petites réserves réutilisées)
+  const RING_N = 6, SCORCH_N = 10;
+  const ringGeoFx = new THREE.RingGeometry(0.72, 1, 40).rotateX(-Math.PI / 2);
+  const fxRings = [], fxScorch = [];
+  for (let i = 0; i < RING_N; i++) {
+    const m = new THREE.Mesh(ringGeoFx, new THREE.MeshBasicMaterial({ color: 0xfff1d0, transparent: true, opacity: 0, depthWrite: false }));
+    m.visible = false; m.renderOrder = 2; scene.add(m); fxRings.push({ m, t: 1, k: 1 });
+  }
+  {
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const x = c.getContext('2d'), r = mulberry32(5);
+    for (let k = 0; k < 7; k++) {
+      const px = 32 + (r() - 0.5) * 20, py = 32 + (r() - 0.5) * 20, rad = 8 + r() * 14;
+      const g = x.createRadialGradient(px, py, 0, px, py, rad);
+      g.addColorStop(0, 'rgba(25,20,16,0.55)'); g.addColorStop(1, 'rgba(25,20,16,0)');
+      x.fillStyle = g; x.fillRect(0, 0, 64, 64);
+    }
+    const tex = new THREE.CanvasTexture(c), geo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+    for (let i = 0; i < SCORCH_N; i++) {
+      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
+      m.visible = false; m.renderOrder = 1; scene.add(m); fxScorch.push({ m, t: 99 });
+    }
+  }
+  let ringCur = 0, scorchCur = 0;
+  function fxRing(x, z, k) {
+    const R = fxRings[ringCur]; ringCur = (ringCur + 1) % RING_N;
+    R.t = 0; R.k = k; R.m.position.set(x, 0.12, z); R.m.visible = true;
+  }
+  function fxScorchAt(x, z, k) {
+    const S = fxScorch[scorchCur]; scorchCur = (scorchCur + 1) % SCORCH_N;
+    S.t = 0; S.m.position.set(x, 0.03, z); S.m.scale.set(4.2 * k, 1, 4.2 * k); S.m.rotation.y = Math.random() * 6; S.m.visible = true;
+  }
+  // Mise à jour de toutes les couches d'effets (appelée par render)
+  function fxUpdate(dt) {
+    for (const key in FX) {
+      const L = FX[key], list = L.list, pa = L.pos.array, ca = L.col.array, sa = L.sr.array;
+      let n = 0;
+      for (let i = 0; i < list.length; i++) {
+        const p = list[i];
+        if (p.delay > 0) { p.delay -= dt; continue; }
+        p.t += dt;
+        if (p.t >= p.life) { list.splice(i, 1); i--; continue; }
+        const f = p.t / p.life, dr = Math.exp(-p.drag * dt);
+        p.vx *= dr; p.vz *= dr; p.vy = p.vy * dr - p.g * dt;
+        p.x += p.vx * dt; p.y = Math.max(0.05, p.y + p.vy * dt); p.z += p.vz * dt; p.r += p.vr * dt;
+        _fc0.set(p.c0).lerp(_fc1.set(p.c1), Math.min(1, f * 1.6));
+        const a = p.a * Math.min(1, p.t * 14) * (1 - f) * (1 - f * 0.3);
+        pa[n * 3] = p.x; pa[n * 3 + 1] = p.y; pa[n * 3 + 2] = p.z;
+        ca[n * 4] = _fc0.r; ca[n * 4 + 1] = _fc0.g; ca[n * 4 + 2] = _fc0.b; ca[n * 4 + 3] = a;
+        sa[n * 2] = p.s0 + (p.s1 - p.s0) * (1 - (1 - f) * (1 - f)); sa[n * 2 + 1] = p.r;
+        n++;
+      }
+      L.g.instanceCount = n;
+      L.pos.needsUpdate = true; L.col.needsUpdate = true; L.sr.needsUpdate = true;
+    }
+    for (const R of fxRings) {
+      if (!R.m.visible) continue;
+      R.t += dt * 2.2;
+      if (R.t >= 1) { R.m.visible = false; continue; }
+      const s = (0.6 + 5.5 * (1 - (1 - R.t) * (1 - R.t))) * R.k;
+      R.m.scale.set(s, 1, s); R.m.material.opacity = 0.75 * (1 - R.t);
+    }
+    for (const S of fxScorch) {
+      if (!S.m.visible) continue;
+      S.t += dt;
+      if (S.t > 7 || (levelGroup && -S.m.position.z < ally.d - 30)) { S.m.visible = false; continue; }
+      S.m.material.opacity = Math.min(1, S.t * 8) * Math.min(1, (7 - S.t) / 2);
     }
   }
 
@@ -491,12 +784,16 @@ body {
   function spawnCorpse(team, x, z, flung) {
     const list = corpses[team];
     if (list.length >= CORPSE_MAX) list.shift();
-    list.push({ x, z, y: 0, vy: flung ? 4 + Math.random() * 4 : 0, yaw: (team ? Math.PI : 0) + (Math.random() - 0.5) * 0.9, t: 0 });
+    // chute en avant ou en arrière, un peu de travers ; projeté par une explosion : il tournoie
+    const back = Math.random() < 0.5 ? 1 : -1;
+    list.push({ x, z, y: 0, vy: flung ? 3.5 + Math.random() * 3 : 0, vx: flung ? (Math.random() - 0.5) * 3 : 0, yaw: (team ? Math.PI : 0) + (Math.random() - 0.5) * 1.2, fall: back * Math.PI * 0.47, roll: (Math.random() - 0.5) * 0.5, spin: flung ? (Math.random() < 0.5 ? -1 : 1) * (7 + Math.random() * 5) : 0, t: 0 });
+    if (Math.random() < 0.5) fxDust(x, 0.2, z, 0.9, 0.35);
   }
-  // Balles traçantes
+  // Balles traçantes (additives : elles brillent)
   const TR_MAX = 160;
-  const tracerMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.06, 0.06, 1), new THREE.MeshBasicMaterial({ color: 0xffe9a3 }), TR_MAX);
+  const tracerMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.07, 0.07, 1), new THREE.MeshBasicMaterial({ color: 0xffc35a, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }), TR_MAX);
   tracerMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); tracerMesh.frustumCulled = false; tracerMesh.count = 0;
+  tracerMesh.renderOrder = 3;
   scene.add(tracerMesh);
   let tracers = [];
   const trDummy = new THREE.Object3D();
@@ -504,11 +801,31 @@ body {
     if (tracers.length >= TR_MAX) tracers.shift();
     const len = Math.hypot(x1 - x0, y1 - y0, z1 - z0);
     tracers.push({ x0, y0, z0, x1, y1, z1, t: 0, dur: Math.max(0.08, len / 70), big: !!big });
-    addPart({ x: x0, y: y0, z: z0, vx: 0, vy: 0, vz: 0, life: 0.07, max: 0.07, g: 0, size: big ? 3 : 1.2, color: 0xfff1b0 });
+    // flash au bout du canon (soldat, mitrailleuse ou blindé)
+    const off = Math.min(len * 0.5, big ? 1.25 : (y0 > 0.9 ? 1.35 : 0.4)) / (len || 1);
+    const mx = x0 + (x1 - x0) * off, my = y0 + (y1 - y0) * off, mz = z0 + (z1 - z0) * off;
+    fxFlash(mx, my, mz, big ? 3.2 : (y0 > 0.9 ? 1.3 : 0.75), 0xffb347);
+    if (big) {
+      for (let j = 0; j < 5; j++) fxAdd(FX.smoke, { x: mx, y: my, z: mz, vx: (x1 - x0) / len * 3 + (Math.random() - 0.5), vy: 0.6 + Math.random() * 0.6, vz: (z1 - z0) / len * 3 + (Math.random() - 0.5), life: 1.2 + Math.random() * 0.6, s0: 0.7, s1: 2.4, c0: 0x9a958a, c1: 0xcfcabd, a: 0.55, drag: 2.5 });
+    }
   }
+  // Explosion : éclair, boule de feu, fumée qui monte et s'étale, onde de choc, débris, braises, trace au sol
   function fireball(x, z, size) {
     const k = size || 1;
-    for (let j = 0; j < 26 * k; j++) addPart({ x, y: 0.3, z, vx: (Math.random() - 0.5) * 7 * k, vy: 4 + Math.random() * 7, vz: (Math.random() - 0.5) * 7 * k, life: 0.9, max: 0.9, g: 13, size: 1.5, color: [0xff8a3d, 0xffd166, 0x55584d][j % 3] });
+    fxFlash(x, 1.0 * k, z, 6 * k, 0xffa03a);
+    fxRing(x, z, k);
+    fxScorchAt(x, z, k);
+    for (let j = 0; j < Math.round(11 * k); j++) {
+      const a = Math.random() * Math.PI * 2, v = (1 + Math.random() * 2.5) * k;
+      fxAdd(FX.glow, { x: x + Math.cos(a) * 0.3 * k, y: 0.4 + Math.random() * 0.6 * k, z: z + Math.sin(a) * 0.3 * k, vx: Math.cos(a) * v, vy: 1.5 + Math.random() * 3 * k, vz: Math.sin(a) * v, life: 0.35 + Math.random() * 0.35, s0: 1.3 * k, s1: 2.8 * k, c0: 0xfff2b0, c1: 0xff4a12, a: 0.95, drag: 3 });
+    }
+    for (let j = 0; j < Math.round(10 * k); j++) {
+      const a = Math.random() * Math.PI * 2, v = (0.6 + Math.random() * 1.6) * k;
+      fxAdd(FX.smoke, { x: x + Math.cos(a) * 0.4 * k, y: 0.6 * k + Math.random() * 0.8 * k, z: z + Math.sin(a) * 0.4 * k, vx: Math.cos(a) * v, vy: 1.2 + Math.random() * 2.2, vz: Math.sin(a) * v, life: 1.6 + Math.random() * 1.2, s0: 1.2 * k, s1: 4.2 * k, c0: 0x2e2a26, c1: 0x9b958a, a: 0.8, drag: 1.4, delay: 0.05 + Math.random() * 0.12 });
+    }
+    for (let j = 0; j < Math.round(6 * k); j++) fxDust(x + (Math.random() - 0.5) * 2 * k, 0.3, z + (Math.random() - 0.5) * 2 * k, 1.8 * k, 0.45);
+    for (let j = 0; j < Math.round(12 * k); j++) addPart({ x, y: 0.4, z, vx: (Math.random() - 0.5) * 9 * k, vy: 4 + Math.random() * 8, vz: (Math.random() - 0.5) * 9 * k, life: 0.9 + Math.random() * 0.4, max: 1.3, g: 16, size: 0.6 + Math.random() * 0.9, color: [0x3b3a33, 0x5d5446, 0x6e6252][j % 3], spinP: true });
+    fxSparks(x, 0.6, z, Math.round(10 * k), 0xffa040, 6 * k);
   }
 
   // Secousses de caméra et ralenti
@@ -699,17 +1016,103 @@ body {
   let shellGeo = null, shellMat = null, ringGeo = null, ringMat = null;
   function unitPos(g, u) { return [clampX((g === ally ? ally.cx : g.x) + u.x), -g.d + u.z]; }
   function tankZ() { return -ally.d - radiusOf(ally.units.length) - 1.8; }
+  // Étoile blanche (marque alliée), plate, face +z
+  function starGeo(r) {
+    const sh = new THREE.Shape();
+    for (let i = 0; i < 10; i++) {
+      const a = Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.4 : r;
+      if (i) sh.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); else sh.moveTo(Math.cos(a) * rr, Math.sin(a) * rr);
+    }
+    return new THREE.ShapeGeometry(sh);
+  }
+  // Ombre douce posée au sol (même texture que les ombres des soldats)
+  function blobShadow(sx, sz) {
+    // géométrie et matériau propres : disposeGroup les libère avec le niveau
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(sx, sz).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: blobTexture(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+    m.position.y = 0.03; m.renderOrder = 1;
+    return m;
+  }
+  // Blindé allié : chenilles et galets, caisse à glacis incliné, tourelle avec bande bleue et étoiles
   function makeTank() {
     const grp = new THREE.Group();
-    const hullMat = new THREE.MeshLambertMaterial({ color: 0x4d5d34, flatShading: true });
-    const dark = new THREE.MeshLambertMaterial({ color: 0x2a2d24 });
-    const hull = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.7, 2.8), hullMat); hull.position.y = 0.65; grp.add(hull);
-    for (const sx of [-1, 1]) { const tr = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.6, 3.0), dark); tr.position.set(sx * 1.05, 0.32, 0); grp.add(tr); }
-    const turret = new THREE.Group(); turret.position.set(0, 1.15, 0.2); grp.add(turret);
-    const top = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.5, 1.3), hullMat); turret.add(top);
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 1.8, 8), dark); barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.05, -1.4); turret.add(barrel);
-    const band = new THREE.Mesh(new THREE.BoxGeometry(1.92, 0.16, 0.5), new THREE.MeshLambertMaterial({ color: COL.ally })); band.position.set(0, 0.95, -0.6); grp.add(band);
+    const hullC = 0x5a6b3c, hullD = 0x46532f, trk = 0x2a2b26, wheel = 0x50544a, dark = 0x232421, white = 0xf3f0e6;
+    const P = [];
+    for (const sx of [-1, 1]) {
+      P.push({ geo: new THREE.BoxGeometry(0.5, 0.5, 2.9).translate(sx * 1.0, 0.3, 0), color: trk });
+      P.push({ geo: new THREE.CylinderGeometry(0.25, 0.25, 0.5, 10).rotateZ(Math.PI / 2).translate(sx * 1.0, 0.3, -1.45), color: trk });
+      P.push({ geo: new THREE.CylinderGeometry(0.25, 0.25, 0.5, 10).rotateZ(Math.PI / 2).translate(sx * 1.0, 0.3, 1.45), color: trk });
+      for (let w = 0; w < 5; w++) {
+        P.push({ geo: new THREE.CylinderGeometry(0.2, 0.2, 0.06, 10).rotateZ(Math.PI / 2).translate(sx * 1.26, 0.27, -1.1 + w * 0.55), color: wheel });
+        P.push({ geo: new THREE.CylinderGeometry(0.075, 0.075, 0.08, 6).rotateZ(Math.PI / 2).translate(sx * 1.29, 0.27, -1.1 + w * 0.55), color: 0x7a7d70 });
+      }
+      P.push({ geo: new THREE.BoxGeometry(0.6, 0.06, 3.3).translate(sx * 1.0, 0.6, 0), color: hullD });
+      P.push({ geo: new THREE.CylinderGeometry(0.08, 0.08, 0.06, 8).rotateX(Math.PI / 2).translate(sx * 0.7, 0.92, -1.62), color: white });
+      P.push({ geo: new THREE.CylinderGeometry(0.08, 0.08, 0.3, 8).rotateX(Math.PI / 2).translate(sx * 0.55, 0.98, 1.6), color: dark });
+      P.push({ geo: starGeo(0.2).rotateY(sx * Math.PI / 2).translate(sx * 0.985, 0.98, 0.7), color: white });
+    }
+    P.push(
+      { geo: new THREE.BoxGeometry(1.5, 0.5, 3.0).translate(0, 0.62, 0), color: hullD },
+      { geo: new THREE.BoxGeometry(1.95, 0.32, 2.3).translate(0, 0.98, 0.3), color: hullC },
+      { geo: new THREE.BoxGeometry(1.95, 0.1, 1.0).rotateX(-0.42).translate(0, 0.93, -1.2), color: hullC },
+      { geo: new THREE.BoxGeometry(1.95, 0.42, 0.1).translate(0, 0.9, 1.47), color: hullD },
+      { geo: starGeo(0.2).translate(0, 0.9, 1.526), color: white },
+      { geo: new THREE.BoxGeometry(0.26, 0.34, 0.12).translate(0.72, 1.02, 1.58), color: 0x6b7a44 },
+      { geo: new THREE.BoxGeometry(0.26, 0.34, 0.12).translate(-0.72, 1.02, 1.58), color: 0x6b7a44 },
+      { geo: segGeo([0.45, 1.02, -1.3], [0.45, 1.06, -1.85], 0.06, 0.06), color: dark },
+      { geo: new THREE.BoxGeometry(0.3, 0.08, 1.2).translate(-0.6, 1.17, 1.0), color: 0x6e5a3e }
+    );
+    grp.add(new THREE.Mesh(mergeShaded(P, 0, 1.2, 0.35), vcMat));
+    // tourelle (pivote vers la cible)
+    const turret = new THREE.Group(); turret.position.set(0, 1.14, 0.25); grp.add(turret);
+    const TP = [
+      { geo: new THREE.CylinderGeometry(0.72, 0.82, 0.48, 8).rotateY(Math.PI / 8).scale(1, 1, 1.15).translate(0, 0.24, 0), color: hullC },
+      { geo: new THREE.CylinderGeometry(0.835, 0.84, 0.11, 8).rotateY(Math.PI / 8).scale(1, 1, 1.15).translate(0, 0.07, 0), color: COL.ally },
+      { geo: new THREE.BoxGeometry(0.62, 0.38, 0.3).translate(0, 0.24, -0.9), color: hullD },
+      { geo: new THREE.CylinderGeometry(0.24, 0.27, 0.2, 8).translate(0.28, 0.56, 0.2), color: hullD },
+      { geo: new THREE.CylinderGeometry(0.22, 0.22, 0.05, 8).translate(0.28, 0.68, 0.2), color: hullC },
+      { geo: segGeo([0.28, 0.74, 0.05], [0.28, 0.76, -0.55], 0.05, 0.05), color: dark },
+      { geo: new THREE.CylinderGeometry(0.015, 0.015, 1.6, 4).translate(-0.45, 1.2, 0.55), color: dark },
+      { geo: new THREE.BoxGeometry(0.9, 0.3, 0.3).translate(0, 0.26, 0.98), color: hullD },
+      { geo: starGeo(0.2).rotateY(Math.PI / 2).translate(0.735, 0.27, 0.05), color: white },
+      { geo: starGeo(0.2).rotateY(-Math.PI / 2).translate(-0.735, 0.27, 0.05), color: white }
+    ];
+    turret.add(new THREE.Mesh(mergeShaded(TP, -0.1, 0.8, 0.3), vcMat));
+    const barrel = new THREE.Mesh(mergeShaded([
+      { geo: new THREE.CylinderGeometry(0.075, 0.095, 1.9, 8).rotateX(Math.PI / 2), color: hullD },
+      { geo: new THREE.CylinderGeometry(0.12, 0.12, 0.26, 8).rotateX(Math.PI / 2).translate(0, 0, -0.95), color: dark }
+    ], -0.2, 0.2, 0.15), vcMat);
+    barrel.position.set(0, 0.24, -1.95); barrel.userData.z0 = -1.95;
+    turret.add(barrel); turret.userData.barrel = barrel;
+    grp.add(blobShadow(3.4, 4.6));
     return { group: grp, turret };
+  }
+  // Nid de mitrailleuse : sacs de sable empilés, mitrailleuse à bouclier, tireur qui suit la visée
+  function makeNest(bagsCol, side, gunnerGeo) {
+    const grp = new THREE.Group();
+    const r = mulberry32(side > 0 ? 3 : 4), P = [];
+    for (let layer = 0; layer < 3; layer++) {
+      const n = 12, rad = 1.22 - layer * 0.07;
+      for (let i = 0; i < n; i++) {
+        const a = (i + (layer % 2) * 0.5) / n * Math.PI * 2;
+        P.push({ geo: new THREE.BoxGeometry(0.66, 0.24, 0.36).rotateY(-a - Math.PI / 2 + (r() - 0.5) * 0.15).translate(Math.cos(a) * rad, 0.12 + layer * 0.22, Math.sin(a) * rad), color: shadeCol(bagsCol, 0.82 + r() * 0.3) });
+      }
+    }
+    P.push({ geo: new THREE.CylinderGeometry(0.05, 0.08, 0.95, 6).translate(0, 0.475, 0), color: 0x2e312a });
+    grp.add(new THREE.Mesh(mergeShaded(P, 0, 0.7, 0.3), vcMat));
+    const gun = new THREE.Group(); gun.position.y = 1.0; grp.add(gun);
+    gun.add(new THREE.Mesh(mergeShaded([
+      { geo: new THREE.BoxGeometry(0.2, 0.22, 0.5), color: 0x2e312a },
+      { geo: new THREE.CylinderGeometry(0.085, 0.085, 0.8, 8).rotateX(Math.PI / 2).translate(0, 0.03, 0.62), color: 0x3c4036 },
+      { geo: new THREE.CylinderGeometry(0.035, 0.035, 0.3, 6).rotateX(Math.PI / 2).translate(0, 0.03, 1.15), color: 0x1e1e1e },
+      { geo: new THREE.BoxGeometry(0.78, 0.5, 0.04).translate(0, 0.08, 0.32), color: 0x4a5040 },
+      { geo: new THREE.BoxGeometry(0.15, 0.15, 0.2).translate(0.18, -0.06, 0.02), color: 0x5a5a3a },
+      { geo: new THREE.BoxGeometry(0.22, 0.05, 0.05).translate(0, 0, -0.28), color: 0x1e1e1e }
+    ], -0.2, 0.3, 0.25), vcMat));
+    const gunner = new THREE.Mesh(gunnerGeo, vcMat);
+    gunner.position.set(0, -0.56, -0.62); gunner.rotation.y = Math.PI;
+    gun.add(gunner);
+    grp.add(blobShadow(3.6, 3.6));
+    return { group: grp, gun, gunner };
   }
   function explodeAt(x, z, rad, size) {
     fireball(x, z, size);
@@ -865,7 +1268,7 @@ body {
     nests = []; tankPickup = null; shells = []; bossFireT = 2.5; ambAcc = 0;
     corpses = [[], []]; tracers = [];
     if (ally.tank) ally.tank = null;
-    const nestGunnerGeo = makeSoldier(COL.enemy, COL.enemyLegs, COL.helmE);
+    const nestGunnerGeo = makeSoldier(COL.enemy, COL.enemyLegs, COL.helmE, false);
     shellGeo = new THREE.SphereGeometry(0.4, 10, 8);
     shellMat = new THREE.MeshLambertMaterial({ color: 0x2b2b2b });
     ringGeo = new THREE.RingGeometry(1.75, 2.15, 36).rotateX(-Math.PI / 2);
@@ -913,13 +1316,7 @@ body {
       } else if (row.type === 'enemy') {
         squads.push({ d: row.d, x: row.x, count: row.count, units: [], alive: true, cap: CAP_SQUAD, tag: makeTag('enemy'), final: false });
       } else if (row.type === 'nest') {
-        const grp = new THREE.Group();
-        const bagsRing = new THREE.Mesh(new THREE.TorusGeometry(1.15, 0.38, 6, 12), new THREE.MeshLambertMaterial({ color: B.bags, flatShading: true }));
-        bagsRing.rotation.x = -Math.PI / 2; bagsRing.position.y = 0.3; grp.add(bagsRing);
-        const gun = new THREE.Group(); gun.position.y = 1.0; grp.add(gun);
-        const body = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.24, 0.6), postMat); gun.add(body);
-        const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 1.5, 6), postMat); barrel.rotation.x = Math.PI / 2; barrel.position.z = 0.9; gun.add(barrel);
-        const gunner = new THREE.Mesh(nestGunnerGeo, vcMat); gunner.position.set(row.side * 0.55, 0, 0); gunner.rotation.y = row.side * Math.PI / 2; grp.add(gunner);
+        const { group: grp, gun, gunner } = makeNest(B.bags, row.side, nestGunnerGeo);
         const nx = row.side * (HALF + 2.1);
         grp.position.set(nx, 0, -row.d);
         levelGroup.add(grp);
@@ -953,7 +1350,8 @@ body {
     squads.push({ d: finalD, x: 0, count: L.finalCount, units: [], alive: true, cap: CAP_FINAL, tag: makeTag('enemy'), final: true });
     bossMesh = null; bossFall = 0;
     if (L.boss) {
-      bossMesh = new THREE.Mesh(makeSoldier(COL.enemy, COL.enemyLegs, 0xf2b632), new THREE.MeshLambertMaterial({ vertexColors: true }));
+      bossMesh = new THREE.Mesh(makeGeneral(), new THREE.MeshLambertMaterial({ vertexColors: true }));
+      bossMesh.userData.shadow = blobShadow(4, 3.4); levelGroup.add(bossMesh.userData.shadow);
       bossMesh.scale.setScalar(4);
       bossMesh.rotation.y = Math.PI;
       bossMesh.position.set(0, 0, -finalD - 1.5);
@@ -1933,6 +2331,87 @@ body {
     fxLose();
   }
 
+  // ---------- Animation des unités et effets (appelés par render) ----------
+  const _eulU = new THREE.Euler(0, 0, 0, 'YXZ'), _vsU = new THREE.Vector3(), _gvU = new THREE.Vector3();
+  function partMatrix(p, dt) {
+    let s = Math.max(0.01, p.life / p.max) * p.size;
+    if (p.flat) {
+      // confetti : chute freinée et flottement
+      if (p.vy < -2.2) p.vy = -2.2;
+      const dr = Math.exp(-1.6 * dt); p.vx *= dr; p.vz *= dr;
+      p.x += Math.sin(p.life * 5 + p.ph) * dt * 1.4;
+      if (p.y > 0.08) { p.rx += dt * 7; p.ry += dt * 3.5; } else p.rx = Math.PI / 2;
+      s = p.size * Math.min(1, p.life * 1.5);
+      _eulU.set(p.rx, p.ry, 0); mtx.makeRotationFromEuler(_eulU); mtx.scale(_vsU.set(s * 1.4, s * 0.1, s));
+      mtx.setPosition(p.x, p.y, p.z);
+    } else if (p.spinP) {
+      _eulU.set(p.life * 9, p.life * 6, 0); mtx.makeRotationFromEuler(_eulU); mtx.scale(_vsU.set(s, s * 0.7, s));
+      mtx.setPosition(p.x, p.y, p.z);
+    } else mtx.makeScale(s, s, s).setPosition(p.x, p.y, p.z);
+  }
+  function corpseMatrix(cp) {
+    const ease = Math.min(1, cp.t * 4.5), e2 = 1 - (1 - ease) * (1 - ease);
+    const a = e2 * (cp.fall === undefined ? Math.PI * 0.47 : cp.fall) + (cp.spin ? cp.t * cp.spin : 0);
+    const sink = cp.t > 2.3 ? (cp.t - 2.3) * 0.7 : 0;
+    // près de la caméra, le corps s'efface (pas de figurine géante au premier plan)
+    const k = Math.max(0, Math.min(1, (camera.position.z - cp.z - 5) / 5)) * Math.min(1, (3.2 - cp.t) * 2);
+    if (k <= 0.02) return false;
+    _eulU.set(a, cp.yaw, (cp.roll || 0) * e2);
+    mtx.makeRotationFromEuler(_eulU); mtx.scale(_vsU.set(k, k, k));
+    mtx.setPosition(cp.x, cp.y + 0.06 - sink, cp.z);
+    return true;
+  }
+  function tankAnim(T, tz, dt) {
+    const tu = T.turret, sq = nextSquad();
+    let want = 0;
+    if (sq && sq.alive && sq.d - ally.d < 45) want = Math.atan2(-(sq.x - ally.cx), -(-sq.d - tz));
+    tu.rotation.y += (want - tu.rotation.y) * Math.min(1, dt * 6);
+    // recul du canon à chaque tir
+    if (T.fireT > (T.pf || 0) + 0.3) T.rc = 1;
+    T.pf = T.fireT;
+    const br = tu.userData.barrel;
+    if (br) { T.rc = Math.max(0, (T.rc || 0) - dt * 3.5); br.position.z = br.userData.z0 + T.rc * T.rc * 0.45; }
+    T.ex = (T.ex || 0) - dt;
+    if (T.ex <= 0) {
+      T.ex = 0.11;
+      fxAdd(FX.smoke, { x: ally.cx + (Math.random() < 0.5 ? -0.55 : 0.55), y: 1.05, z: tz + 1.65, vx: (Math.random() - 0.5) * 0.4, vy: 1 + Math.random() * 0.6, vz: 0.8, life: 0.9, s0: 0.35, s1: 1.3, c0: 0x3a3833, c1: 0x8d897f, a: 0.45, drag: 1 });
+      if (state === 'run' || state === 'battle') fxDust(ally.cx + (Math.random() < 0.5 ? -1 : 1), 0.2, tz + 1.4, 1.5, 0.35);
+    }
+  }
+  let dustAcc = 0;
+  function armyFx(dt) {
+    // poussière soulevée par l'armée qui court
+    const n = ally.units.length;
+    if ((state === 'run' || state === 'battle') && n && dt > 0) {
+      dustAcc += Math.min(24, 4 + n * 0.1) * dt;
+      while (dustAcc >= 1) {
+        dustAcc -= 1;
+        const [x, z] = unitPos(ally, ally.units[Math.floor(Math.random() * n)]);
+        fxDust(x, 0.12, z + 0.3, 0.9 + Math.random() * 0.7, 0.2);
+      }
+    }
+    // étincelles quand une porte est franchie
+    for (const g of gates) {
+      if (!g.passed || g.fxDone) continue;
+      g.fxDone = true;
+      const h = g.halves[g.chosen], o = g.opts[g.chosen];
+      if (!h || !o) continue;
+      h.panel.getWorldPosition(_gvU);
+      const col = isGood(o) ? 0x7fd0ff : 0xff6a4d;
+      for (let j = 0; j < 34; j++) {
+        const ex = (Math.random() - 0.5) * 5.4, ey = 0.6 + Math.random() * 2.7;
+        fxAdd(FX.glow, { x: _gvU.x + ex, y: ey, z: _gvU.z, vx: ex * 0.6 + (Math.random() - 0.5) * 2, vy: 1 + Math.random() * 3, vz: -3 - Math.random() * 5, life: 0.45 + Math.random() * 0.4, s0: 0.38, s1: 0.1, c0: 0xffffff, c1: col, a: 1, g: 7, drag: 1.2 });
+      }
+      fxFlash(_gvU.x, 1.9, _gvU.z, 6.5, col);
+    }
+  }
+  // Corps d'un soldat : penché en avant autour de la hanche, buste qui pivote (dir = 1 allié, -1 ennemi)
+  const RUN_LEAN = -0.2, IDLE_LEAN = -0.04, _eul = new THREE.Euler(0, 0, 0, 'YXZ');
+  function bodyMatrix(lean, twist, x, y, z, dir) {
+    _eul.set(lean, dir > 0 ? twist : Math.PI + twist, 0);
+    mtx.makeRotationFromEuler(_eul);
+    mtx.setPosition(x, y + HIP_Y * (1 - Math.cos(lean)), z - dir * HIP_Y * Math.sin(lean));
+  }
   function render() {
     // Soldats alliés : corps, deux jambes qui alternent, ombre
     const bobT = time * 12;
@@ -1942,10 +2421,10 @@ body {
     for (let i = 0; i < n; i++) {
       const u = ally.units[i];
       const ph = bobT + i * 1.7;
-      const y = (moving ? Math.abs(Math.sin(ph)) * 0.1 : 0) + (u.y || 0);
-      const sw = moving ? Math.sin(ph) * 0.75 : 0;
+      const y = (moving ? Math.abs(Math.sin(ph)) * 0.09 : 0) + (u.y || 0);
+      const sw = moving ? Math.sin(ph) * 0.8 : 0;
       const x = clampX(ally.cx + u.x), z = -ally.d + u.z;
-      mtx.makeTranslation(x, y, z);
+      bodyMatrix(moving ? RUN_LEAN : 0, moving ? Math.sin(ph) * 0.14 : Math.sin(time * 1.4 + i) * 0.05, x, y, z, 1);
       allyMesh.setMatrixAt(i, mtx);
       mtx.makeRotationX(sw).setPosition(x - LEG_X, HIP_Y + y, z);
       allyLegs.setMatrixAt(i * 2, mtx);
@@ -1967,11 +2446,11 @@ body {
       const fighting = battle === s;
       for (let i = 0; i < s.units.length && e < CAP_ENEMY_TOTAL; i++) {
         const u = s.units[i];
-        const ph = bobT * 0.8 + i;
-        const y = fighting ? Math.abs(Math.sin(ph)) * 0.1 : 0;
-        const sw = fighting ? Math.sin(ph) * 0.6 : 0;
+        const ph = bobT * 0.9 + i * 1.3;
+        const y = fighting ? Math.abs(Math.sin(ph)) * 0.09 : Math.max(0, Math.sin(time * 2.2 + i * 0.7)) * 0.012;
+        const sw = fighting ? Math.sin(ph) * 0.75 : 0;
         const x = clampX(s.x + u.x), z = -s.d + u.z;
-        mtx.copy(rotPi).setPosition(x, y, z);
+        bodyMatrix(fighting ? RUN_LEAN : IDLE_LEAN, fighting ? Math.sin(ph) * 0.14 : Math.sin(time * 0.9 + i * 2.1) * 0.12, x, y, z, -1);
         enemyMesh.setMatrixAt(e, mtx);
         mtx.copy(rotPi).multiply(legRot.makeRotationX(sw)).setPosition(x + LEG_X, HIP_Y + y, z);
         enemyLegs.setMatrixAt(e * 2, mtx);
@@ -1992,11 +2471,15 @@ body {
       if (fs.alive) bossMesh.position.set(clampX(fs.x), Math.abs(Math.sin(time * 3)) * 0.15, -fs.d - 1.5);
       else if (bossFall < 1) { bossFall = Math.min(1, bossFall + lastDt * 1.6); bossMesh.rotation.x = -bossFall * Math.PI / 2; bossMesh.position.y = 0; }
       if (!fs.alive && ally.d > fs.d + 2) bossMesh.visible = false;
+      if (fs.alive) bossMesh.rotation.z = Math.sin(time * 1.6) * 0.035;
+      const bsh = bossMesh.userData.shadow;
+      if (bsh) { bsh.visible = bossMesh.visible; bsh.position.set(bossMesh.position.x, 0.03, bossMesh.position.z - bossFall * 2.4); }
     }
     // Blindé
     if (ally.tank) {
       const T = ally.tank, tz = tankZ();
       T.group.position.set(ally.cx, Math.abs(Math.sin(time * 14)) * 0.04, tz);
+      tankAnim(T, tz, lastDt);
       setTag(tankTag, 'Blindé · ' + Math.max(0, T.hp));
       placeTag(tankTag, ally.cx, 2.6, tz);
     } else if (tankTag) tankTag.hidden = true;
@@ -2015,10 +2498,8 @@ body {
         const cp = list[i];
         cp.t += lastDt;
         if (cp.t > 3.2 || cp.z > rearZ) { list.splice(i, 1); continue; }
-        if (cp.vy || cp.y > 0) { cp.y = Math.max(0, cp.y + cp.vy * lastDt); cp.vy -= 18 * lastDt; if (cp.y === 0) cp.vy = 0; }
-        const a = Math.min(1, cp.t * 5) * Math.PI * 0.47;
-        const sink = cp.t > 2.3 ? (cp.t - 2.3) * 0.7 : 0;
-        mtx.makeRotationY(cp.yaw).multiply(legRot.makeRotationX(a)).setPosition(cp.x, cp.y + 0.08 - sink, cp.z);
+        if (cp.vy || cp.y > 0) { cp.y = Math.max(0, cp.y + cp.vy * lastDt); cp.vy -= 18 * lastDt; cp.x += (cp.vx || 0) * lastDt; if (cp.y === 0) { cp.vy = 0; cp.spin = 0; } }
+        if (!corpseMatrix(cp)) continue;
         cms[team].setMatrixAt(c++, mtx);
       }
       cms[team].count = c;
@@ -2030,11 +2511,11 @@ body {
     for (let i = tracers.length - 1; i >= 0; i--) {
       const tr = tracers[i];
       tr.t += lastDt;
-      if (tr.t >= tr.dur) { tracers.splice(i, 1); continue; }
+      if (tr.t >= tr.dur) { if (Math.random() < (tr.big ? 1 : 0.3)) fxDust(tr.x1, 0.3, tr.z1, tr.big ? 1.5 : 0.7, 0.4); tracers.splice(i, 1); continue; }
       const f = tr.t / tr.dur;
       trDummy.position.set(tr.x0 + (tr.x1 - tr.x0) * f, tr.y0 + (tr.y1 - tr.y0) * f, tr.z0 + (tr.z1 - tr.z0) * f);
       trDummy.lookAt(tr.x1, tr.y1, tr.z1);
-      trDummy.scale.set(tr.big ? 3 : 1, tr.big ? 3 : 1, tr.big ? 1.6 : 1.3);
+      trDummy.scale.set(tr.big ? 3.2 : 1, tr.big ? 3.2 : 1, tr.big ? 2.4 : 1.9);
       trDummy.updateMatrix();
       tracerMesh.setMatrixAt(tc++, trDummy.matrix);
     }
@@ -2062,8 +2543,7 @@ body {
       if (p.life <= 0) { parts.splice(i, 1); continue; }
       p.vy -= p.g * dt;
       p.x += p.vx * dt; p.y = Math.max(0.07, p.y + p.vy * dt); p.z += p.vz * dt;
-      const s = Math.max(0.01, p.life / p.max) * p.size;
-      mtx.makeScale(s, s, s).setPosition(p.x, p.y, p.z);
+      partMatrix(p, dt);
       partMesh.setMatrixAt(pc, mtx);
       partMesh.setColorAt(pc, tmpColor.set(p.color));
       pc++;
@@ -2072,6 +2552,8 @@ body {
     partMesh.count = pc;
     partMesh.instanceMatrix.needsUpdate = true;
     if (partMesh.instanceColor) partMesh.instanceColor.needsUpdate = true;
+    armyFx(dt);
+    fxUpdate(dt);
 
     // Caméra
     const ending = state === 'victory' || state === 'done';
