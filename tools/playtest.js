@@ -12,7 +12,7 @@
 //   --size WxH       taille d'écran (défaut 390x844, téléphone)
 //   --menu-only      capture le menu puis s'arrête
 //   --no-play        ne clique pas sur « Lancer l'opération »
-// Le pilote choisit la porte qui donne le plus de soldats (window.__renforts.nextGate()).
+// Le pilote choisit la porte qui donne le plus de soldats (window.__renforts.nextGate(), 2 ou 3 portes).
 // Sortie : une ligne JSON par seconde environ, puis "ERRORS [...]".
 const { chromium } = require('playwright');
 const http = require('http');
@@ -76,7 +76,8 @@ const srv = http.createServer((q, r) => {
       const g = window.__renforts; if (!g) return { s: 'nohook' };
       const x = g.nextGate && g.nextGate();
       const ap = (c, o) => o.op === '+' ? c + o.v : o.op === '-' ? c - o.v : o.op === 'x' ? c * o.v : Math.floor(c / o.v);
-      if (x && x.d - g.d < 40) g.steer(ap(g.count, x.opts[0]) >= ap(g.count, x.opts[1]) ? -2.8 : 2.8);
+      // meilleure porte (2 ou 3 portes, prix d'un mur éventuel déduit)
+      if (x && x.d - g.d < 40) { let bi = 0, bv = -1; x.opts.forEach((o, i) => { const v = ap(Math.max(0, g.count - ((x.cost && x.cost[i]) || 0)), o); if (v > bv) { bv = v; bi = i; } }); g.steer(x.xs ? x.xs[bi] : (bi ? 2.8 : -2.8)); }
       return { s: g.state, c: g.count, d: Math.round(g.d), f: Math.round(g.finalD) };
     });
     if (Date.now() - lastLog > 1000) { lastLog = Date.now(); console.log(JSON.stringify(st)); }
