@@ -196,6 +196,49 @@ body {
   .btn { transition: none; }
   .float { animation: fadeOut .9s forwards; }
 }
+
+/* ---------- Sensations : bannières, combo, flash, médailles qui volent ---------- */
+.fx { position: fixed; inset: 0; z-index: 7; pointer-events: none; overflow: hidden; }
+.fx-flash { position: absolute; inset: 0; opacity: 0; background: #fff; }
+/* bannière dans le tiers bas (sous l'armée) : ne cache jamais les portes qui arrivent */
+.fx-banner {
+  position: absolute; left: 50%; top: 75%;
+  transform: translate(-50%, -50%) rotate(-3deg);
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  max-width: calc(100vw - 32px); text-align: center; white-space: nowrap;
+}
+.fx-banner strong {
+  font-family: var(--font-display); font-weight: 400; line-height: 1; letter-spacing: .02em;
+  font-size: clamp(34px, 11.5vw, 60px); color: #fff;
+  -webkit-text-stroke: 2px var(--ink); text-shadow: 0 4px 0 var(--ink), 0 0 22px rgba(29, 36, 22, .35);
+}
+.fx-banner.long strong { font-size: clamp(24px, 7.6vw, 42px); }
+.fx-banner.good strong { color: var(--brass); }
+.fx-banner.gold strong { color: #ffd166; }
+.fx-banner.win strong { color: #9fd0ff; }
+.fx-banner.bad strong { color: #ffb3a8; }
+.fx-banner small {
+  font: 700 13px var(--font-ui); letter-spacing: .16em; text-transform: uppercase;
+  background: var(--ink); color: var(--paper); padding: 3px 10px; border-radius: 6px;
+}
+.fx-combo {
+  position: absolute; left: max(16px, env(safe-area-inset-left, 0px)); top: calc(env(safe-area-inset-top, 0px) + 56px);
+  background: var(--brass); color: var(--ink); border: 2px solid var(--ink); border-radius: 10px; box-shadow: 0 3px 0 var(--ink);
+  padding: 3px 10px 4px; font: 700 12px var(--font-ui); letter-spacing: .14em; text-transform: uppercase;
+  display: flex; align-items: baseline; gap: 6px; transform-origin: left center;
+}
+.fx-combo b { font-family: var(--font-display); font-weight: 400; font-size: 22px; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.fx-combo.hot { background: #ff8a3d; }
+.fx-medal {
+  position: absolute; left: 0; top: 0; width: 24px; height: 24px; box-sizing: border-box;
+  border-radius: 50%; background: var(--brass); border: 2px solid var(--ink); color: var(--ink);
+  font: 700 13px/20px var(--font-ui); text-align: center; box-shadow: 0 2px 0 var(--ink);
+}
+.tag.ally span { transition: background-color .25s, color .25s, box-shadow .25s, font-size .25s; }
+.tag.ally.t1 span { font-size: 26px; }
+.tag.ally.t2 span { font-size: 30px; border-color: var(--brass); }
+.tag.ally.hot span { background: var(--brass); color: var(--ink); box-shadow: 0 0 0 3px rgba(255, 255, 255, .7), 0 0 24px rgba(242, 182, 50, .95); }
+.tag.ally.cold span { background: var(--enemy); }
 </style>
 
 <div id="game" aria-label="Jeu Renforts"></div>
@@ -255,6 +298,8 @@ body {
 </div>
 
 <div class="toast" id="toast" role="status" hidden><span id="toastText"></span><i class="swipe" id="toastSwipe" hidden></i></div>
+
+<div class="fx" id="fx" aria-hidden="true"><div class="fx-flash" id="fxFlash"></div><div class="fx-combo" id="fxCombo" hidden>Combo<b>×2</b></div><div class="fx-banner" id="fxBanner" hidden><strong></strong><small></small></div></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
@@ -972,16 +1017,26 @@ body {
 
   // ---------- Son ----------
   let actx = null, master = null, sfxBus = null, musicBus = null, noiseBuf = null, lastHit = 0, lastCoin = 0, lastShot = 0;
+  let crowdBuf = null, crowd = null, sfxTramp = 0;
   function ensureAudio() {
     try {
       if (!actx) {
         actx = new (window.AudioContext || window.webkitAudioContext)();
-        master = actx.createGain(); master.connect(actx.destination);
-        sfxBus = actx.createGain(); sfxBus.connect(master);
+        // compresseur en sortie : rien ne sature, même quand tout sonne en même temps
+        const comp = actx.createDynamicsCompressor();
+        comp.threshold.value = -14; comp.knee.value = 10; comp.ratio.value = 4; comp.attack.value = 0.004; comp.release.value = 0.2;
+        comp.connect(actx.destination);
+        master = actx.createGain(); master.connect(comp);
+        sfxBus = actx.createGain(); sfxBus.gain.value = 0.9; sfxBus.connect(master);
         musicBus = actx.createGain(); musicBus.gain.value = 0.3; musicBus.connect(master);
         noiseBuf = actx.createBuffer(1, Math.floor(actx.sampleRate * 0.3), actx.sampleRate);
         const ch = noiseBuf.getChannelData(0);
         for (let i = 0; i < ch.length; i++) ch[i] = Math.random() * 2 - 1;
+        // bruit plus long (2 s) pour la rumeur de la foule, sans répétition audible
+        crowdBuf = actx.createBuffer(1, Math.floor(actx.sampleRate * 2), actx.sampleRate);
+        const cb = crowdBuf.getChannelData(0), sr = actx.sampleRate;
+        let lp = 0;
+        for (let i = 0; i < cb.length; i++) { lp = lp * 0.9 + (Math.random() * 2 - 1) * 0.1; cb[i] = lp * 3 * (0.6 + 0.4 * Math.sin(i / sr * 7.3) * Math.sin(i / sr * 2.1)); }
       }
       if (actx.state === 'suspended') actx.resume();
       applyMute();
@@ -1009,38 +1064,149 @@ body {
     src.connect(f); f.connect(g); g.connect(bus || sfxBus);
     src.start(t); src.stop(t + dur + 0.02);
   }
+  // Cloche douce (fondamentale + harmoniques) pour les carillons des portes
+  function bell(f, t, vol, bus) {
+    tone('sine', f, f, 0.7, vol, 0, bus, t);
+    tone('sine', f * 2, f * 2, 0.35, vol * 0.3, 0, bus, t);
+    tone('triangle', f * 3, f * 3, 0.16, vol * 0.1, 0, bus, t);
+  }
+  // Cuivre : deux dents de scie désaccordées dans un passe-bas qui s'ouvre
+  function brass(f, t, dur, vol, bus) {
+    const o1 = actx.createOscillator(), o2 = actx.createOscillator(), lp = actx.createBiquadFilter(), g = actx.createGain();
+    o1.type = 'sawtooth'; o2.type = 'sawtooth';
+    o1.frequency.value = f; o2.frequency.value = f * 1.006;
+    lp.type = 'lowpass'; lp.Q.value = 0.9;
+    lp.frequency.setValueAtTime(f * 1.2, t);
+    lp.frequency.linearRampToValueAtTime(Math.min(9000, f * 5), t + 0.05);
+    lp.frequency.exponentialRampToValueAtTime(Math.min(6000, f * 2.2), t + dur + 0.05);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.03);
+    g.gain.linearRampToValueAtTime(vol * 0.7, t + Math.max(0.05, dur * 0.8));
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.1);
+    o1.connect(lp); o2.connect(lp); lp.connect(g); g.connect(bus || sfxBus);
+    o1.start(t); o2.start(t); o1.stop(t + dur + 0.12); o2.stop(t + dur + 0.12);
+  }
+  // Fifre de la marche : carré adouci
+  function fife(f, t, dur, vol) {
+    const o = actx.createOscillator(), lp = actx.createBiquadFilter(), g = actx.createGain();
+    o.type = 'square'; o.frequency.setValueAtTime(f * 0.985, t); o.frequency.exponentialRampToValueAtTime(f, t + 0.03);
+    lp.type = 'lowpass'; lp.frequency.value = 2000;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.015);
+    g.gain.setValueAtTime(vol, t + dur * 0.7);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(lp); lp.connect(g); g.connect(musicBus);
+    o.start(t); o.stop(t + dur + 0.02);
+  }
+  const PENTA = [0, 2, 4, 7, 9];
+  function comboNote(c) { const n = Math.max(0, Math.min(c, 11) - 1); return 72 + 12 * Math.floor(n / 5) + PENTA[n % 5]; }
   function sfx(kind) {
+    // le carillon des portes remplace le son générique « good »/« bad » juste après
+    if ((kind === 'good' || kind === 'bad') && gateSfxSkip) { gateSfxSkip = false; return; }
     if (!actx) return;
+    const now = actx.currentTime;
     if (kind === 'good') tone('triangle', 520, 1040, 0.22, 0.2);
-    else if (kind === 'bad') tone('sawtooth', 240, 110, 0.3, 0.1);
+    else if (kind === 'bad') { tone('sawtooth', 240, 110, 0.3, 0.1); tone('sine', 160, 70, 0.3, 0.2); }
+    else if (kind === 'chime') {
+      // gamme pentatonique : chaque porte parfaite monte d'une note
+      if (combo > 1) bell(midi(comboNote(combo - 1)), now, 0.09);
+      bell(midi(comboNote(combo)), now + (combo > 1 ? 0.07 : 0), 0.17);
+      if (combo >= 5) bell(midi(comboNote(combo) + 12), now + 0.14, 0.05);
+    }
+    else if (kind === 'meh') tone('triangle', 440, 560, 0.16, 0.12);
+    else if (kind === 'break') [659, 523, 392].forEach((f, i) => tone('triangle', f, f * 0.94, 0.14, 0.1, i * 0.08));
+    else if (kind === 'sparkle') { bell(2093, now + 0.05, 0.05); bell(2637, now + 0.11, 0.04); bell(3136, now + 0.17, 0.03); }
     else if (kind === 'hit') {
       if (time - lastHit > 0.06) { lastHit = time; noise(actx.currentTime, 0.06, 0.18, 700 + Math.random() * 500); tone('square', 150 + Math.random() * 90, 70, 0.05, 0.04); }
     }
     else if (kind === 'coin') { if (time - lastCoin > 0.05) { lastCoin = time; tone('square', 1300 + Math.random() * 300, 1800, 0.05, 0.035); } }
+    else if (kind === 'medal') { const f = 1568 + Math.random() * 400; tone('triangle', f, f * 1.5, 0.08, 0.06); }
     else if (kind === 'shot') { if (time - lastShot > 0.035) { lastShot = time; noise(actx.currentTime, 0.035, 0.06, 2600 + Math.random() * 1500); } }
     else if (kind === 'cannon') { noise(actx.currentTime, 0.3, 0.5, 400); tone('sine', 160, 50, 0.25, 0.35); }
-    else if (kind === 'boom') { noise(actx.currentTime, 0.5, 0.7, 160); tone('sine', 110, 30, 0.45, 0.5); }
-    else if (kind === 'win') [523, 659, 784, 1046].forEach((f, i) => tone('triangle', f, f * 1.01, 0.25, 0.18, i * 0.11));
+    else if (kind === 'boom') { noise(actx.currentTime, 0.5, 0.7, 160); tone('sine', 110, 30, 0.45, 0.5); buzz(45); }
+    else if (kind === 'squad') {
+      // « ta-daa » de cuivres + coup sourd
+      brass(midi(67), now, 0.1, 0.07); brass(midi(72), now + 0.12, 0.38, 0.07); brass(midi(76), now + 0.12, 0.38, 0.045);
+      tone('sine', 120, 45, 0.35, 0.35);
+    }
+    else if (kind === 'fanfare') {
+      // palier atteint : arpège montant de cuivres
+      [72, 76, 79].forEach((m, i) => brass(midi(m), now + i * 0.09, 0.08, 0.06));
+      brass(midi(84), now + 0.27, 0.45, 0.06); brass(midi(76), now + 0.27, 0.45, 0.035); brass(midi(48), now + 0.27, 0.45, 0.06);
+      bell(2093, now + 0.3, 0.04);
+    }
+    else if (kind === 'win') {
+      // grande fanfare de victoire (environ 2,5 s)
+      const t0 = now + 0.04, N = (m, at, d, v) => brass(midi(m), t0 + at, d, v || 0.065);
+      tone('sine', 90, 32, 0.7, 0.5, 0, sfxBus, t0);
+      N(67, 0, 0.1); N(67, 0.13, 0.1); N(67, 0.26, 0.1);
+      N(72, 0.4, 0.42); N(64, 0.4, 0.42, 0.04); N(48, 0.4, 0.42, 0.06);
+      tone('sine', 98, 55, 0.35, 0.35, 0, sfxBus, t0 + 0.4);
+      N(71, 0.9, 0.11); N(72, 1.03, 0.11); N(74, 1.16, 0.11);
+      [72, 76, 79, 84].forEach((m) => N(m, 1.3, 1.1, 0.05)); N(48, 1.3, 1.1, 0.07);
+      tone('sine', 98, 50, 0.5, 0.4, 0, sfxBus, t0 + 1.3);
+      for (let j = 0; j < 4; j++) noise(t0 + 1.3 + j * 0.08, 0.3, 0.12 - j * 0.025, 6500);
+      [2093, 2637, 3136, 4186].forEach((f, j) => bell(f, t0 + 1.45 + j * 0.07, 0.035));
+    }
     else if (kind === 'lose') [392, 311, 233].forEach((f, i) => tone('sawtooth', f, f * 0.97, 0.3, 0.09, i * 0.16));
   }
+  // Rumeur de la foule : bruit filtré qui monte avec la taille de l'armée
+  function crowdSet(level, count) {
+    if (!actx || !crowdBuf) return;
+    if (!crowd) {
+      if (level <= 0) return;
+      const src = actx.createBufferSource(); src.buffer = crowdBuf; src.loop = true;
+      const f = actx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 450; f.Q.value = 0.7;
+      const g = actx.createGain(); g.gain.value = 0;
+      src.connect(f); f.connect(g); g.connect(sfxBus); src.start();
+      crowd = { src, f, g };
+    }
+    crowd.g.gain.setTargetAtTime(level, actx.currentTime, 0.5);
+    crowd.f.frequency.setTargetAtTime(380 + Math.min(400, count * 0.6), actx.currentTime, 0.5);
+  }
 
-  // Musique : petite marche militaire générée (caisse claire, grosse caisse, basse)
-  const BPM = 116, STEP = 60 / BPM / 4;
+  // Musique : marche militaire générée (caisse claire, grosse caisse, basse, fifre)
+  // En approche du fort : roulement continu, basse obstinée, tempo plus rapide (tension)
+  const BPM = 116, BPM_TENSE = 128;
+  let STEP = 60 / BPM / 4;
   const SNARE  = [1,0,1,0, 1,1,1,0, 1,0,1,0, 1,1,1,0, 1,0,1,0, 1,1,1,0, 1,0,1,1, 1,1,1,1];
   const ACCENT = [1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,1,0];
   const BASS   = [45,0,0,0, 45,0,52,0, 43,0,0,0, 43,0,50,0, 41,0,0,0, 41,0,48,0, 40,0,0,0, 40,0,47,0];
+  // mélodie du fifre (la mineur, sur les accords la / sol / fa / mi), deux variantes en alternance
+  const MEL_A  = [76,0,0,72, 69,0,72,0, 74,0,0,71, 67,0,71,0, 72,0,0,69, 65,0,69,72, 71,0,68,0, 64,0,0,0];
+  const MEL_B  = [69,0,72,76, 81,0,76,0, 79,0,74,71, 74,0,79,0, 77,0,72,69, 72,0,77,0, 76,0,0,74, 71,0,68,0];
+  const T_BASS = [40,0,40,0, 41,0,40,0, 40,0,40,0, 41,0,43,0, 40,0,40,0, 41,0,40,0, 40,0,44,0, 45,0,44,0];
   const midi = (m) => 440 * Math.pow(2, (m - 69) / 12);
-  let musicOn = false, musicStep = 0, nextStepTime = 0;
-  function startMusic() { if (!actx || musicOn) return; musicOn = true; musicStep = 0; nextStepTime = actx.currentTime + 0.1; }
+  let musicOn = false, musicStep = 0, nextStepTime = 0, musicBar = 0, musicTension = 0;
+  function startMusic() { if (!actx || musicOn) return; musicOn = true; musicStep = 0; musicBar = 0; nextStepTime = actx.currentTime + 0.1; }
   function stopMusic() { musicOn = false; }
   function musicTick() {
     if (!musicOn || !actx) return;
     if (nextStepTime < actx.currentTime - 0.2) nextStepTime = actx.currentTime + 0.05; // onglet en arrière-plan
     while (nextStepTime < actx.currentTime + 0.15) {
-      const i = musicStep % 32, t = nextStepTime;
-      if (SNARE[i]) noise(t, 0.09, ACCENT[i] ? 0.35 : 0.15, 1800, musicBus);
-      if (i % 8 === 0) tone('sine', 120, 45, 0.18, 0.6, 0, musicBus, t);
-      if (BASS[i]) tone('triangle', midi(BASS[i]), midi(BASS[i]) * 0.999, STEP * 1.8, 0.3, 0, musicBus, t);
+      const i = musicStep % 32, t = nextStepTime, ten = musicTension;
+      if (i === 0) musicBar++;
+      if (!ten) {
+        if (SNARE[i]) noise(t, 0.09, ACCENT[i] ? 0.35 : 0.15, 1800, musicBus);
+        if (i % 8 === 0) tone('sine', 120, 45, 0.18, 0.6, 0, musicBus, t);
+        if (BASS[i]) tone('triangle', midi(BASS[i]), midi(BASS[i]) * 0.999, STEP * 1.8, 0.3, 0, musicBus, t);
+        // le fifre entre après une mesure de tambours
+        const mel = musicBar % 2 ? MEL_B : MEL_A;
+        if (musicBar > 1 && mel[i]) {
+          let n = 1; while (n < 4 && !mel[(i + n) % 32]) n++;
+          fife(midi(mel[i]), t, n * STEP * 0.85, 0.11);
+        }
+      } else {
+        // tension : roulement de caisse claire qui enfle, grosse caisse sur chaque temps
+        noise(t, 0.07, 0.08 + 0.16 * (i / 31) + (i % 4 === 0 ? 0.12 : 0), 2000, musicBus);
+        if (i % 4 === 0) tone('sine', 115, 42, 0.2, ten > 1 ? 0.75 : 0.6, 0, musicBus, t);
+        if (T_BASS[i]) tone('sawtooth', midi(T_BASS[i]), midi(T_BASS[i]) * 0.999, STEP * 1.5, 0.12, 0, musicBus, t);
+        if (i === 0 || i === 16) { brass(midi(52), t, STEP * 3, 0.1, musicBus); brass(midi(59), t, STEP * 3, 0.07, musicBus); }
+        if (ten > 1 && i % 8 === 6) brass(midi(64), t, STEP * 1.2, 0.08, musicBus);
+      }
+      // pas de l'armée : plus elle est grande, plus ça gronde
+      if (i % 4 === 0 && sfxTramp > 0) noise(t, 0.07, sfxTramp, 170, sfxBus);
+      STEP = 60 / (ten ? BPM_TENSE : BPM) / 4;
       nextStepTime += STEP;
       musicStep++;
     }
@@ -1107,6 +1273,7 @@ body {
     $('hud').hidden = false;
     paused = false;
     state = 'run';
+    fxReset();
     startMusic();
     save.seen = save.seen || {};
     if (!save.seen.intro) { save.seen.intro = true; persist(); showToast('Glisse à gauche ou à droite pour choisir ta porte', true, 4); }
@@ -1198,6 +1365,212 @@ body {
 
   function nextSquad() { for (const s of squads) if (s.alive) return s; return null; }
 
+  // ---------- Sensations : combo, bannières, compteur, paliers, médailles, vibrations ----------
+  const fxEl = { layer: $('fx'), banner: $('fxBanner'), combo: $('fxCombo'), flash: $('fxFlash') };
+  const MILESTONES = [100, 250, 500, 1000, 2500, 5000, 10000];
+  const fxV = new THREE.Vector3();
+  let combo = 0, bestCombo = 0, gateSfxSkip = false;
+  let fxPrevCount = 0, fxMilestone = 0, fxTier = -1, fxHotT = 0, fxCrowdT = 0;
+  let fxBannerPrio = 0, fxBannerUntil = 0, fxBannerAnim = null;
+  let fxSlowT = -1, fxFovBase = 0, fxPrimeShown = 0, fxStarT = 0, fxStars = 0, lastBuzz = 0;
+  const fxNow = () => performance.now() / 1000;
+
+  // Vibration du téléphone (désactivable par un réglage settings.vibrate === false)
+  function buzz(p) {
+    try { if (typeof settings !== 'undefined' && settings && settings.vibrate === false) return; } catch (e) {}
+    if (save.settings && save.settings.vibrate === false) return;
+    const n = fxNow();
+    if (n - lastBuzz < 0.12) return;
+    lastBuzz = n;
+    try { if (navigator.vibrate) navigator.vibrate(p); } catch (e) {}
+  }
+  // Bannière brève (1 s) dans le tiers bas ; une bannière plus importante n'est pas écrasée
+  function fxBanner(text, sub, kind, prio) {
+    const n = fxNow();
+    if (n < fxBannerUntil && prio < fxBannerPrio) return;
+    fxBannerPrio = prio; fxBannerUntil = n + 0.75;
+    const b = fxEl.banner;
+    b.className = 'fx-banner ' + (kind || '') + (text.length > 11 ? ' long' : '');
+    b.firstChild.textContent = text;
+    b.lastChild.textContent = sub || '';
+    b.lastChild.hidden = !sub;
+    b.hidden = false;
+    if (fxBannerAnim) fxBannerAnim.cancel();
+    const T = (s, y) => 'translate(-50%,' + (y || -50) + '%) scale(' + s + ') rotate(-3deg)';
+    const kf = REDUCED
+      ? [{ opacity: 0, transform: T(1) }, { opacity: 1, transform: T(1), offset: 0.15 }, { opacity: 1, transform: T(1), offset: 0.75 }, { opacity: 0, transform: T(1) }]
+      : [{ opacity: 0, transform: T(0.3) }, { opacity: 1, transform: T(1.18), offset: 0.14 }, { opacity: 1, transform: T(1), offset: 0.28 },
+         { opacity: 1, transform: T(1.03), offset: 0.8 }, { opacity: 0, transform: T(0.92, -85) }];
+    try {
+      const a = b.animate(kf, { duration: 1000, easing: 'ease-out', fill: 'forwards' });
+      a.onfinish = () => { if (fxBannerAnim === a) b.hidden = true; };
+      fxBannerAnim = a;
+    } catch (e) { setTimeout(() => { b.hidden = true; }, 1000); }
+  }
+  function fxFlash(color, strength) {
+    const a = REDUCED ? Math.min(strength, 0.1) : strength;
+    fxEl.flash.style.background = color;
+    try { fxEl.flash.animate([{ opacity: a }, { opacity: 0 }], { duration: 450, easing: 'ease-out' }); } catch (e) {}
+  }
+  function fxShowCombo() {
+    const c = fxEl.combo;
+    if (combo < 2) { c.hidden = true; return; }
+    c.hidden = false;
+    c.lastChild.textContent = '×' + combo;
+    c.classList.toggle('hot', combo >= 5);
+    if (!REDUCED) try { c.animate([{ transform: 'scale(1.6)' }, { transform: 'scale(1)' }], { duration: 320, easing: 'cubic-bezier(.3,1.6,.5,1)' }); } catch (e) {}
+  }
+  // Petite médaille DOM qui vole d'un point de l'écran à un autre
+  function fxStar(x0, y0, x1, y1, delay, onEnd) {
+    const s = document.createElement('div');
+    s.className = 'fx-medal'; s.textContent = '★';
+    fxEl.layer.appendChild(s);
+    fxStars++;
+    const mx = (x0 + x1) / 2 + (Math.random() - 0.5) * 120, my = Math.min(y0, y1) + Math.abs(y0 - y1) * 0.3;
+    const P = (x, y, k) => 'translate(' + (x - 12).toFixed(1) + 'px,' + (y - 12).toFixed(1) + 'px) scale(' + k + ')';
+    let done = false;
+    const end = () => { if (done) return; done = true; s.remove(); fxStars--; if (onEnd) onEnd(); };
+    try {
+      const a = s.animate([{ transform: P(x0, y0, 0.3), opacity: 0 }, { transform: P(mx, my, 1.25), opacity: 1, offset: 0.4 }, { transform: P(x1, y1, 0.7), opacity: 1 }],
+        { duration: 620, delay, easing: 'cubic-bezier(.45,0,.75,.7)', fill: 'both' });
+      a.onfinish = end;
+    } catch (e) { end(); }
+    setTimeout(end, delay + 1200);
+  }
+  function rectCenter(el) { const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }
+  // Bonus de combo : médailles ajoutées tout de suite, qui volent du compteur de l'armée vers le HUD
+  function fxMedals(n) {
+    save.medals += n; persist();
+    const hud = $('hudMedals');
+    if (REDUCED || !allyTag || allyTag.hidden || $('hud').hidden) { hud.textContent = save.medals; return; }
+    const [x0, y0] = rectCenter(allyTag.firstChild), [x1, y1] = rectCenter(hud);
+    const k = Math.min(n, 5);
+    let left = k;
+    for (let j = 0; j < k; j++) {
+      fxStar(x0 + (Math.random() - 0.5) * 30, y0, x1, y1, j * 80, () => {
+        left--;
+        hud.textContent = left ? Math.min(save.medals, (+hud.textContent || 0) + Math.ceil(n / k)) : save.medals;
+        sfx('medal');
+        try { hud.parentElement.animate([{ transform: 'scale(1.25)' }, { transform: 'scale(1)' }], { duration: 200 }); } catch (e) {}
+      });
+    }
+  }
+  // Appelé au passage d'une porte (o = choisie, other = l'autre, before = effectif avant)
+  function fxGate(o, other, before) {
+    gateSfxSkip = true;
+    const got = ally.count, alt = applyOp(before, other);
+    if (got >= alt && got > before) {
+      combo++; bestCombo = Math.max(bestCombo, combo);
+      sfx('chime');
+      const bonus = combo >= 2 ? Math.min(4, Math.floor(combo / 2)) : 0;
+      const tricky = isGood(other) && got > alt; // vrai choix entre deux bonnes portes
+      fxBanner(got > alt ? 'PARFAIT !' : 'BIEN JOUÉ', combo >= 2 ? 'Combo ×' + combo + (bonus ? ' · +' + bonus + ' ★' : '') : '', 'good', 1);
+      if (tricky || combo % 5 === 0) { fxFlash('#fff3c4', 0.32); sfx('sparkle'); buzz(20); }
+      if (bonus) fxMedals(bonus);
+    } else {
+      if (combo >= 2) { fxBanner('COMBO PERDU', '', 'bad', 1); sfx('break'); }
+      combo = 0;
+      if (got < before) { sfx('bad'); buzz(40); } else sfx('meh');
+    }
+    fxShowCombo();
+  }
+  function fxSquad() {
+    fxBanner('ESCOUADE ÉLIMINÉE', ally.count + ' soldats debout', 'win', 2);
+    sfx('squad'); buzz([30, 40, 60]); addShake(0.15); fxFlash('#ffffff', 0.2);
+  }
+  function fxMilestoneHit(m) {
+    const sub = m >= 2500 ? 'Rien ne t\'arrête' : m >= 1000 ? 'Armée légendaire' : m >= 500 ? 'Régiment au complet' : m >= 250 ? 'Bataillon formé' : 'Les renforts affluent';
+    fxBanner(m + ' SOLDATS !', sub, 'gold', 3);
+    sfx('fanfare'); buzz([40, 30, 40]); fxFlash('#ffd166', 0.3);
+  }
+  // Coup final contre le fort : ralenti marqué, zoom, flash, bannière
+  function fxWin() {
+    slowTimer = 0; timeScale = 0.12;
+    if (fxSlowT < 0) fxFovBase = camera.fov;
+    fxSlowT = 0;
+    fxFlash('#ffffff', 0.75);
+    fxBanner('VICTOIRE !', bestCombo >= 3 ? 'Meilleur combo ×' + bestCombo : 'Le fort est à toi', 'gold', 4);
+    buzz([60, 40, 140]);
+    combo = 0; fxShowCombo();
+    fxPrimeShown = primeBase;
+  }
+  function fxLose() {
+    combo = 0; fxShowCombo();
+    fxFlash('#d8432f', 0.3);
+    buzz([80, 60, 160]);
+  }
+  function fxReset() {
+    combo = 0; bestCombo = 0; gateSfxSkip = false;
+    fxPrevCount = ally.count; fxTier = -1; fxHotT = 0;
+    fxMilestone = 0; while (fxMilestone < MILESTONES.length && ally.count >= MILESTONES[fxMilestone]) fxMilestone++;
+    fxBannerUntil = 0; fxEl.banner.hidden = true; fxShowCombo();
+    if (fxSlowT >= 0) { fxSlowT = -1; timeScale = 1; camera.fov = fxFovBase; camera.updateProjectionMatrix(); }
+    for (const m of fxEl.layer.querySelectorAll('.fx-medal')) m.remove();
+    fxStars = 0;
+  }
+  // Chaque image (temps réel) : compteur, paliers, ralenti/zoom, étoiles de la prime, foule, tension musicale
+  function fxTick(real) {
+    const running = (state === 'run' || state === 'battle') && !paused;
+    const c = ally.count;
+    if (allyTag && running) {
+      if (c - fxPrevCount >= 8 && c >= fxPrevCount * 1.4) {
+        // l'armée grossit d'un coup : le compteur gonfle et devient doré
+        allyTag.classList.remove('cold'); allyTag.classList.add('hot'); fxHotT = 0.75;
+        if (!REDUCED) try { allyTag.firstChild.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.9)', offset: 0.3 }, { transform: 'scale(.92)', offset: 0.65 }, { transform: 'scale(1)' }], { duration: 560, easing: 'ease-out' }); } catch (e) {}
+      } else if (fxPrevCount - c >= 6 && c <= fxPrevCount * 0.75) {
+        allyTag.classList.remove('hot'); allyTag.classList.add('cold'); fxHotT = 0.6;
+        if (!REDUCED) try { allyTag.firstChild.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-6px)' }, { transform: 'translateX(6px)' }, { transform: 'translateX(0)' }], { duration: 240 }); } catch (e) {}
+      }
+      let hit = 0;
+      while (fxMilestone < MILESTONES.length && c >= MILESTONES[fxMilestone]) hit = MILESTONES[fxMilestone++];
+      if (hit) fxMilestoneHit(hit);
+      const tier = c >= 500 ? 2 : c >= 100 ? 1 : 0;
+      if (tier !== fxTier) { fxTier = tier; allyTag.classList.toggle('t1', tier === 1); allyTag.classList.toggle('t2', tier === 2); }
+    }
+    if (fxHotT > 0) { fxHotT -= real; if (fxHotT <= 0 && allyTag) allyTag.classList.remove('hot', 'cold'); }
+    fxPrevCount = c;
+
+    // ralenti qui reprend en douceur + zoom de la caméra
+    if (fxSlowT >= 0) {
+      fxSlowT += real;
+      const f = Math.min(1, fxSlowT / 1.6);
+      timeScale = f < 0.4 ? 0.12 : 0.12 + 0.88 * (1 - Math.cos(Math.PI * (f - 0.4) / 0.6)) / 2;
+      if (!REDUCED) {
+        const env = f < 0.08 ? f / 0.08 : f > 0.55 ? Math.max(0, 1 - (f - 0.55) / 0.45) : 1;
+        camera.fov = fxFovBase - 10 * env; camera.updateProjectionMatrix();
+      }
+      if (f >= 1) { fxSlowT = -1; timeScale = 1; camera.fov = fxFovBase; camera.updateProjectionMatrix(); }
+    }
+
+    // prime du fort : des médailles jaillissent de la porte du fort vers le compteur de la prime
+    if (state === 'victory' && !REDUCED) {
+      const v = primeBase + Math.round(primeValue);
+      fxStarT -= real;
+      if (v > fxPrimeShown && fxStarT <= 0 && fxStars < 24) {
+        fxStarT = 0.07; fxPrimeShown = v;
+        fxV.set(0, 1.5, -(finalD + 16) + 1.2).project(camera);
+        const w = window.innerWidth, h = window.innerHeight, pr = $('primeVal');
+        const x0 = Math.abs(fxV.x) < 1.1 ? (fxV.x * 0.5 + 0.5) * w : w / 2, y0 = Math.abs(fxV.y) < 1.1 ? (-fxV.y * 0.5 + 0.5) * h : h * 0.45;
+        const [x1, y1] = rectCenter(pr);
+        fxStar(x0 + (Math.random() - 0.5) * 40, y0, x1, y1, 0, () => {
+          try { pr.parentElement.animate([{ transform: 'scale(1.18)' }, { transform: 'scale(1)' }], { duration: 160 }); } catch (e) {}
+        });
+      }
+    }
+
+    // son : foule et pas de l'armée proportionnels à sa taille, tension près du fort
+    const lg = Math.log2(Math.max(1, c) + 1);
+    sfxTramp = running ? Math.min(0.2, 0.022 * lg) : 0;
+    fxCrowdT -= real;
+    if (fxCrowdT <= 0) { fxCrowdT = 0.25; crowdSet(running ? Math.min(0.045, 0.0045 * lg) : 0, c); }
+    let ten = 0;
+    if (running) {
+      if ((battle && battle.final) || (bossMesh && finalD - ally.d < 90)) ten = 2;
+      else if (finalD - ally.d < 100) ten = 1;
+    }
+    musicTension = ten;
+  }
+
   function step(dt) {
     time += dt;
     const running = state === 'run' || state === 'battle';
@@ -1220,6 +1593,7 @@ body {
           const before = ally.count;
           ally.count = applyOp(ally.count, o);
           if (ally.count < before) syncUnits(ally, CAP_ALLY, ally.cx, true);
+          fxGate(o, g.opts[1 - g.chosen], before);
           sfx(ally.count >= before ? 'good' : 'bad');
           floatText(opLabel(o), ally.count >= before);
           if (ally.count < before) addShake(0.15);
@@ -1306,6 +1680,7 @@ body {
       if (s.count <= 0) {
         s.alive = false; s.tag.hidden = true;
         battle = null;
+        if (!s.final) fxSquad();
         if (s.final) win(); else state = 'run';
       }
     }
@@ -1340,6 +1715,7 @@ body {
             fireball(sq.x, -sq.d + 1, 0.7);
             sfx('cannon');
             addShake(0.12);
+            if (sq.count <= 0 && !sq.final) fxSquad();
             if (sq.count <= 0 && state === 'battle') { sq.alive = false; sq.tag.hidden = true; battle = null; if (sq.final) { win(); } else state = 'run'; }
             else if (sq.count <= 0) { sq.alive = false; sq.tag.hidden = true; if (sq.final) win(); }
           }
@@ -1544,6 +1920,7 @@ body {
     sfx('win');
     updatePrime();
     $('prime').hidden = false;
+    fxWin();
   }
   function lose() {
     state = 'defeat'; stateTimer = 0;
@@ -1553,6 +1930,7 @@ body {
     stopMusic();
     addShake(0.3);
     sfx('lose');
+    fxLose();
   }
 
   function render() {
@@ -1733,6 +2111,7 @@ body {
     const dt = real * timeScale;
     lastDt = dt; lastRealDt = real;
     musicTick();
+    fxTick(real);
     if (toastTimer > 0 && !paused) { toastTimer -= real; if (toastTimer <= 0) $('toast').hidden = true; }
     if (state !== 'menu' && !paused) step(dt);
     else { time += dt; syncUnits(ally, CAP_ALLY, 0, false); formUpdate(ally, dt); }
